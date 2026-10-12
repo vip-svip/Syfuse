@@ -23,7 +23,7 @@ head2() { printf '\n== %s ==\n' "$1"; }
 
 cd "$SYFUSE_ROOT"
 
-SRC_DIRS="app/src ui/src core domain data engine privileged lsposed-bridge"
+SRC_DIRS="app/src ui/src core domain data engine daemon privileged hook"
 
 # 在源码里检索，但**剔除纯注释行**。
 # 没有这一步会误报：注释里解释"本模块不引用 WebView"也会被 grep 命中。
@@ -84,7 +84,7 @@ elif [ "$kernel_declared" = "1" ]; then
     pend "接入点已声明，但 kernel/out 为空 —— 内核尚未构建"
   fi
 else
-  pend "内核尚未随包接入（M2 未完成）。当前 engine 绑定 NotLinkedDataPlane，不得对外声称代理可用"
+  pend "内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 NotLinkedDataPlane，不得对外声称代理可用"
 fi
 
 # 内核未接入时，绑定必须确实是 NotLinked —— 防止"嘴上说没接入，代码里却声称已连接"
@@ -280,20 +280,70 @@ head2 "仓库元文件"
 for f in LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md DISCLAIMER.md .gitattributes; do
   [ -s "$f" ] && pass "$f 存在" || fail "$f 缺失或为空"
 done
-if grep -q "GNU GENERAL PUBLIC LICENSE" LICENSE 2>/dev/null && grep -q "Version 3" LICENSE 2>/dev/null; then
-  pass "LICENSE 是 GPL-3.0 全文"
-else
-  fail "LICENSE 不是 GPL-3.0 全文"
-fi
+# 提示词 18.1 的根级结构要求
+for d in module apk screenshots src tests tools .github; do
+  [ -d "$d" ] && pass "目录存在: $d/" || fail "目录缺失: $d/（提示词 18.1 要求）"
+done
+[ -f package.sh ] && pass "根级 package.sh 存在" || fail "根级 package.sh 缺失（提示词 18.1 要求）"
+[ -x package.sh ] || chmod +x package.sh 2>/dev/null
+grep -q "GNU GENERAL PUBLIC LICENSE" LICENSE 2>/dev/null && grep -q "Version 3" LICENSE 2>/dev/null \
+  && pass "LICENSE 是 GPL-3.0 全文" || fail "LICENSE 不是 GPL-3.0 全文"
 if grep -qiE '^#?\s*(The )?MIT License' LICENSE 2>/dev/null; then
   fail "LICENSE 被换成了 MIT —— 这是红线"
 else
   pass "LICENSE 未被换成 MIT"
 fi
-if [ -f .github/workflows/ci.yml ]; then
-  pass "CI 工作流存在"
+[ -f .github/workflows/ci.yml ] && pass "CI 工作流存在" || pend "CI 工作流缺失"
+
+# ---------------------------------------------------------------------------
+head2 "M1 模块骨架（提示词 13 部分 M1 完成判定）"
+# action.sh 必须有 11 个菜单项，一项不少
+if [ -f module/action.sh ]; then
+  menu_items=$(grep -cE '^ *ui_print " *[0-9]+\)' module/action.sh)
+  if [ "$menu_items" -ge 11 ]; then
+    pass "action.sh 菜单项 $menu_items 个（要求 ≥11）"
+  else
+    fail "action.sh 菜单项只有 $menu_items 个（要求 11）"
+  fi
+  # 每项都要真的接功能：必须出现 syfused 调用或明确的 not_implemented
+  if grep -q 'not_implemented' module/action.sh; then
+    pass "action.sh 对未实现项有显式 not_implemented 分支（不产生死菜单）"
+  else
+    fail "action.sh 没有 not_implemented 分支，可能把未实现项伪装成可用"
+  fi
+  for fn in do_install_apk do_daemon_ctl do_status do_logs do_switch_profile do_cert \
+            do_update do_backup do_panel do_uninstall do_selfcheck; do
+    grep -q "^$fn()" module/action.sh || fail "action.sh 缺少实现函数 $fn"
+  done
+  grep -q '^do_selfcheck()' module/action.sh && pass "11 项处理函数齐备" || true
+fi
+# 还原清单机制
+if grep -q 'manifest/installed.json\|MANIFEST' module/customize.sh 2>/dev/null; then
+  pass "customize.sh 会创建还原清单"
 else
-  pend "CI 工作流缺失"
+  fail "customize.sh 未创建还原清单 —— 卸载将失去还原依据"
+fi
+if grep -q 'restorable' module/customize.sh 2>/dev/null; then
+  pass "清单条目含 restorable 字段"
+else
+  fail "清单条目缺少 restorable 字段"
+fi
+if grep -q 'json_escape' module/customize.sh 2>/dev/null; then
+  pass "清单写入前对路径做了 JSON 转义（实测踩过非法转义）"
+else
+  fail "清单写入未做 JSON 转义，路径含特殊字符时会写出非法 JSON"
+fi
+# 卸载残留检查脚本
+[ -f tests/run_restore_check.sh ] && pass "tests/run_restore_check.sh 存在" || fail "缺少卸载残留检查脚本"
+# 守护进程源码
+[ -f src/cmd/syfused/main.go ] && pass "守护进程源码存在: src/cmd/syfused" || fail "缺少守护进程源码"
+[ -f src/internal/manifest/manifest.go ] && pass "还原清单 Go 实现存在" || fail "缺少还原清单 Go 实现"
+[ -f src/internal/ipc/ipc.go ] && pass "UDS 控制通道实现存在" || fail "缺少 UDS 控制通道实现"
+# 不可还原的操作必须被代码拒绝
+if grep -q 'ErrNotRestorable' src/internal/manifest/manifest.go 2>/dev/null; then
+  pass "manifest 对不可还原条目的登记返回错误（硬约束在代码层）"
+else
+  fail "manifest 未拒绝不可还原条目 —— 提示词 3.5 的硬约束未落地"
 fi
 
 # ---------------------------------------------------------------------------

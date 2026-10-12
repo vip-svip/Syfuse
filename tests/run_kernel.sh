@@ -5,7 +5,8 @@
 # 退出码约定与仓库其他脚本一致：0 通过 / 1 失败 / 2 环境缺失。
 set -uo pipefail
 
-KERNEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../kernel" && pwd)"
+# src/ 是 Go 守护进程与内核宿主的源码根（提示词 18.1 要求根级 src/）
+KERNEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../src" && pwd)"
 cd "$KERNEL_DIR"
 
 # ---------- 定位 Go ----------
@@ -35,7 +36,7 @@ echo
 FAIL=0
 
 echo "== gofmt -l（应无输出） =="
-unformatted="$("$GOFMT_BIN" -l src)"
+unformatted="$("$GOFMT_BIN" -l .)"
 if [ -n "$unformatted" ]; then
   echo "$unformatted"
   echo "  [FAIL] 存在未格式化的文件"

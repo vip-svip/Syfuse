@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      只作为 Compose 之前的启动主题存在；界面颜色全部由 Compose 的 SyfuseTheme 决定。
+      这里有意不定义任何半透明或模糊相关属性（7.2 禁止大面积模糊）。
+    -->
+    <style name="Theme.Syfuse" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/background_dark</item>
+    </style>
+</resources>

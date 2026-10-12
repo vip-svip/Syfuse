@@ -1,0 +1,132 @@
+name: Release
+
+# 手动触发。刻意**不**在 push tag 时自动发布：
+# 发布是不可逆动作（产物会被缓存、被模块仓库抓取），
+# 必须由人明确点一次，而不是某次顺手 push 的副作用。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v 前缀，例如 0.1.0）'
+        required: true
+        type: string
+      draft:
+        description: '创建为草稿 Release（建议先草稿核对产物）'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 SDK 组件
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      # 发布前把守门检查全部跑一遍。任何一个失败都不应该产出发布物。
+      - name: 发布前检查 — 凭据
+        run: python3 tools/scan_secrets.py
+
+      - name: 发布前检查 — 红线
+        run: bash tests/run_module_checks.sh
+
+      - name: 发布前检查 — Kotlin 单测
+        run: bash tests/run_unit.sh
+
+      - name: 发布前检查 — 内核
+        run: bash tests/run_kernel.sh
+
+      - name: 校验版本号与输入一致
+        run: |
+          APP_VER=$(grep -oE 'versionName = "[^"]+"' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)"/\1/')
+          MOD_VER=$(grep -E '^version=' module/module.prop | head -1 | cut -d= -f2 | sed 's/^v//')
+          echo "app=$APP_VER module=$MOD_VER 输入=${{ inputs.version }}"
+          if [ "$APP_VER" != "${{ inputs.version }}" ]; then
+            echo "::error::app/build.gradle.kts 的 versionName ($APP_VER) 与输入的版本号不一致"
+            exit 1
+          fi
+          if [ "$MOD_VER" != "${{ inputs.version }}" ]; then
+            echo "::error::module/module.prop 的 version ($MOD_VER) 与输入的版本号不一致"
+            exit 1
+          fi
+
+      # 签名密钥只从 Secrets 读取，仓库与日志中不出现口令（R5）。
+      # 未配置密钥时 package.sh 会产出**未签名**产物，而不是用 debug 密钥冒充。
+      - name: 打包
+        env:
+          SYFUSE_KEYSTORE_PATH: ${{ secrets.SYFUSE_KEYSTORE_PATH }}
+          SYFUSE_KEYSTORE_PASSWORD: ${{ secrets.SYFUSE_KEYSTORE_PASSWORD }}
+          SYFUSE_KEY_ALIAS: ${{ secrets.SYFUSE_KEY_ALIAS }}
+          SYFUSE_KEY_PASSWORD: ${{ secrets.SYFUSE_KEY_PASSWORD }}
+        run: bash tests/package.sh
+
+      - name: 校验产物清单
+        run: python3 tools/verify_files.py dist/MANIFEST.sha256
+
+      - name: 记录产物摘要到 Job Summary
+        run: |
+          {
+            echo "## 产物"
+            echo
+            echo '```'
+            ls -la dist/
+            echo
+            cat dist/MANIFEST.sha256
+            echo '```'
+            echo
+            echo "## 打包记录"
+            echo
+            echo '```'
+            cat dist/package_report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DRAFT_FLAG=""
+          if [ "${{ inputs.draft }}" = "true" ]; then DRAFT_FLAG="--draft"; fi
+          gh release create "v${{ inputs.version }}" \
+            --title "Syfuse v${{ inputs.version }}" \
+            --notes-file CHANGELOG.md \
+            $DRAFT_FLAG \
+            dist/Syfuse-v${{ inputs.version }}-*.apk \
+            dist/Syfuse-Module-v${{ inputs.version }}.zip \
+            dist/MANIFEST.sha256
+
+      - name: 上传产物（作为 Actions artifact 备份）
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ inputs.version }}
+          path: |
+            dist/*.apk
+            dist/*.zip
+            dist/MANIFEST.sha256
+            dist/package_report.txt
+          if-no-files-found: error
+
+      - name: 发布后核验远端
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 tools/verify_remote.py \
+            --repo "${{ github.repository }}" \
+            --expect-public false

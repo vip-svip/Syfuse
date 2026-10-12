@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      权限最小化原则（R3 / R5）：
+      本里程碑只声明确实会用到的两项。VPN、前台服务、通知、无障碍、
+      通知监听等权限会在对应功能（M2 / M7 / M10）落地时随功能一起声明，
+      不提前索取——提前声明而未使用的权限会让用户无法判断风险边界。
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".SyfuseApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Syfuse">
+
+        <!--
+          allowBackup=false 与 fullBackupContent=false 是 R5 的直接要求：
+          节点凭据经 Keystore 加密后仍在应用私有目录，若允许备份，
+          备份包会把加密数据带出设备，扩大暴露面。
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

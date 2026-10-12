@@ -1,0 +1,8 @@
+{
+  "version": "v0.1.0",
+  "versionCode": 1,
+  "zipUrl": "https://github.com/vipsvip/Syfuse/releases/latest/download/Syfuse-Module-v0.1.0.zip",
+  "changelog": "https://raw.githubusercontent.com/vipsvip/Syfuse/main/CHANGELOG.md",
+  "description": "Syfuse · 融合代理 —— 原生 Compose 代理客户端 + KernelSU/Magisk 特权层。v0.1.0 为骨架版本：规则引擎、设置框架、配置编解码与特权层命令白名单已可测；内核尚未随包交付。",
+  "_comment": "本文件的 URL 在仓库默认私有期间不可匿名访问（见 module.prop 的说明）。仓库公开后无需改动即可生效。"
+}

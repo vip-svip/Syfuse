@@ -1,0 +1,47 @@
+﻿# Syfuse 规则一致性期望表
+# 由 core/rule 的 CorpusConsistencyTest 逐条断言。任何一行不通过即视为回归。
+# 制表符分隔。`-` 表示该维度不适用。
+# 列：kind	value	resource_type	document_host	method	expect_decision	expect_priority	note
+#
+# kind=host 时只做 DNS 层匹配（url 为 null）；kind=url 时匹配完整 URL。
+# expect_decision ∈ block / allow / rewrite / none
+# expect_priority ∈ important-allow / important-block / normal-allow / normal-block / none
+#
+host	block-a.test	other	-	-	block	normal-block	域名锚定：命中自身
+host	sub.block-a.test	other	-	-	block	normal-block	域名锚定：命中子域
+host	notblock-a.test	other	-	-	none	none	标签级匹配：notblock-a.test 不得命中 block-a.test
+host	block-a.test.evil.test	other	-	-	none	none	后缀越界防护：域名锚定不得被更长的无关后缀命中
+host	block-b.test	other	-	-	block	important-block	$important 提升为重要拦截
+host	allow-a.test	other	-	-	allow	normal-allow	例外放行
+host	x.allow-a.test	other	-	-	allow	normal-allow	例外放行：子域同样放行
+host	allow-b.test	other	-	-	allow	important-allow	@@ 叠加 $important → 最高优先级
+host	both-a.test	other	-	-	allow	normal-allow	同级下普通放行优先于普通拦截
+host	imp-a.test	other	-	-	allow	important-allow	重要放行优先于重要拦截
+host	mix-a.test	other	-	-	block	important-block	重要拦截优先于普通放行
+url	https://cdn.test/js/tracker.js	script	-	-	block	normal-block	精确 URL 锚定命中
+url	https://cdn.test/js/other.js	script	-	-	none	none	URL 锚定：路径不同不得命中
+url	https://path-a.test/ads/x.js	script	-	-	block	normal-block	域名锚定 + 路径
+url	https://path-a.test/ok.js	script	-	-	none	none	域名锚定 + 路径：路径不符不命中
+host	path-a.test	other	-	-	none	none	带路径的域名锚定规则不得命中裸域名
+host	wild-a.com	other	-	-	block	normal-block	通配符规则命中
+host	wild-a.test	other	-	-	none	none	通配符规则：顶级域不符
+url	https://site.test/adsbanner12/x	script	-	-	block	normal-block	正则规则命中
+host	hosts-a.test	other	-	-	block	normal-block	hosts 0.0.0.0 拦截
+host	hosts-b.test	other	-	-	block	normal-block	hosts 127.0.0.1 拦截
+host	rewrite-a.test	other	-	-	rewrite	normal-block	hosts 非黑洞地址 → 解析重写
+host	dnsmasq-a.test	other	-	-	block	normal-block	dnsmasq address=/d/ 拦截
+host	dnsmasq-b.test	other	-	-	rewrite	normal-block	dnsmasq address=/d/ip 重写
+host	dnsmasq-c.test	other	-	-	rewrite	normal-block	dnsmasq local=/d/ 本地应答
+host	10.10.5.5	other	-	-	block	normal-block	IPv4 网段命中
+host	11.10.5.5	other	-	-	none	none	IPv4 网段：不同网段不命中
+host	scoped.test	other	site-a.test	-	block	normal-block	$domain 包含 → 规则适用
+host	scoped.test	other	other.test	-	none	none	$domain 不匹配 → 规则不适用
+host	scoped-ex.test	other	site-a.test	-	none	none	$domain=~ 排除生效
+host	scoped-ex.test	other	other.test	-	block	normal-block	$domain=~ 未排除 → 规则适用
+host	typed.test	script	-	-	block	normal-block	资源类型匹配
+host	typed.test	image	-	-	none	none	资源类型不匹配 → 规则不适用
+host	typed-all.test	image	-	-	block	normal-block	未限定资源类型 → 适用于全部类型
+host	bad.test	other	-	-	none	none	$badfilter 关闭同形规则（含自身）
+host	deny.test	other	-	-	allow	normal-allow	$denyallow 例外规则在未列出的域名上生效
+host	blocked.deny.test	other	-	-	none	none	$denyallow 列出的域名被排除在本规则之外
+host	unrelated.test	other	-	-	none	none	完全未命中 → 默认放行

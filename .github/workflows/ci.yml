@@ -1,0 +1,251 @@
+name: CI
+
+# 目标：让六条硬红线与核心语义在**每次提交**上被机器检查。
+# 关键约定（见 README「退出码约定」）：
+#   退出码 3 = SKIP（前置不满足），**不是**通过。
+#   因此需要设备的作业单独成一个 job，并且只在真的跑了之后才可能变绿。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3g"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 不需要设备、不需要 Android SDK 的检查 —— 秒级，最快的反馈
+  static:
+    name: 静态检查（红线 + 资源 + 凭据）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 凭据扫描（R5）
+        run: python3 tools/scan_secrets.py
+
+      - name: UI 资源完整性
+        run: bash tests/ui_assets_check.sh
+
+      # run_module_checks.sh 里的 Gradle 相关断言在无 SDK 时会被跳过，
+      # 因此这里先装 SDK，保证它检查的是完整环境。
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 SDK 组件
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: 红队静态检查（R1–R6）
+        run: bash tests/run_module_checks.sh
+
+      - name: 上传静态检查输出
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-evidence
+          path: |
+            tests/perf_results.txt
+            tests/perf_apk_size.txt
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # 单元测试：纯 JVM，无需 Android SDK 也能跑（core:rule 与 domain 都是 JVM 模块）
+  unit:
+    name: 单元测试（JVM）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 SDK 组件
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: 单元测试
+        run: bash tests/run_unit.sh
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: '**/build/test-results/**/*.xml'
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # 构建：证明"可编译"这件事本身
+  build:
+    name: 构建 APK
+    runs-on: ubuntu-latest
+    needs: [static, unit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 SDK 组件
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: 构建 debug APK
+        run: ./gradlew :app:assembleDebug --console=plain
+
+      - name: 报告 APK 体积
+        run: |
+          echo "== APK 体积 =="
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            printf '%-48s %s 字节\n' "$(basename "$apk")" "$(stat -c '%s' "$apk")"
+          done
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 设备测试：需要真机/模拟器。用 reactivecircus 的模拟器动作跑。
+  # 这里刻意**独立成 job**：它耗时且易受 runner 环境影响，
+  # 不应该拖累静态检查与单测的反馈速度。
+  device:
+    name: 设备测试（模拟器）
+    runs-on: ubuntu-latest
+    needs: [build]
+    # 只在与 main 相关的推送和手动触发时跑，避免每个 PR 都烧十几分钟
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 启用 KVM（加速模拟器）
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 缓存 AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api35
+
+      - name: 创建 AVD 快照
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD 快照已创建"
+
+      - name: 运行设备测试
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -o pipefail
+            ./gradlew :app:assembleDebug --console=plain
+            bash tests/run_e2e.sh
+            bash tests/ui_runtime_check.sh
+            bash tests/ui_screenshot.sh
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: dist/screenshots/
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # 远端状态核验：确认仓库仍是私有、许可证仍是 GPL 族。
+  # 只在 main 上跑，且需要 token。仓库公开后这一步会**失败**——
+  # 那是有意的：提示维护者"你自己改了可见性"。
+  remote-guard:
+    name: 远端状态护栏（私有性 + 许可证）
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 核验远端
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 tools/verify_remote.py \
+            --repo "${{ github.repository }}" \
+            --expect-public false

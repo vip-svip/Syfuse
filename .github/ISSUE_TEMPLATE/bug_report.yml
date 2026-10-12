@@ -1,0 +1,96 @@
+name: 缺陷报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先确认这不是[已知缺口](https://github.com/vipsvip/Syfuse/blob/main/README.md#当前完成度)：
+        内核数据面、VpnService、订阅解析、广告过滤的数据面生效、LSPosed Hook **都还没实现**，
+        这些不构成缺陷。
+
+        安全相关的问题**不要**在这里提，请走 [SECURITY.md](https://github.com/vipsvip/Syfuse/blob/main/SECURITY.md)。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 界面（Compose）
+        - 规则引擎（解析 / 匹配语义）
+        - 配置导入导出
+        - 设置
+        - 内核（Go）
+        - 特权层模块（KernelSU / Magisk）
+        - 构建 / CI
+        - 文档
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 你看到什么，期望看到什么。
+      placeholder: |
+        实际：点"连接"后状态一直停在"未连接"，没有任何提示。
+        期望：至少给出一句说明为什么连不上。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 导入规则源 ...
+        2. 进入规则页
+        3. 输入 example.com 并点"测试"
+        4. 结果与期望不符
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 从「设置 → 关于」读取，或写 commit hash。
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备与系统
+      placeholder: "Pixel 7 / Android 15 / KernelSU 0.9.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 原始输出
+      description: |
+        **请贴原始命令输出，不要只写结论。** 例如：
+
+        ```
+        $ tests/run_unit.sh
+        [UNIT SUMMARY] 套件文件=4 用例=28 失败=1 错误=0 跳过=0
+        [UNIT RESULT] FAIL
+        ```
+
+        Android 侧可用：`adb logcat -d -b crash`
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经确认这不是 README 里列出的「尚未交付」项
+          required: true
+        - label: 我贴的是原始输出，不是我的结论
+          required: true

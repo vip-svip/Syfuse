@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题（请勿公开披露细节）
+    url: https://github.com/vipsvip/Syfuse/security/advisories/new
+    about: 走私密渠道报告漏洞，不要在公开 issue 里贴可利用细节。见 SECURITY.md。
+  - name: 使用与安装问题
+    url: https://github.com/vipsvip/Syfuse/blob/main/README.md
+    about: 安装步骤、权限说明、规则语法、常见问题都在 README 里。
+  - name: 已声明的未完成能力
+    url: https://github.com/vipsvip/Syfuse/blob/main/README.md#当前完成度
+    about: 内核数据面、VpnService、广告过滤数据面生效等尚未实现，不是缺陷。
+  - name: 讨论设计取舍
+    url: https://github.com/vipsvip/Syfuse/discussions
+    about: 对某个设计决定有不同看法？这里聊，不必走 issue。

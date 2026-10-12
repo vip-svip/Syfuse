@@ -1,0 +1,71 @@
+! ============================================================
+! Syfuse 规则一致性语料 01 —— 语法族混合输入
+! 覆盖 6.1 列出的全部语法族：域名锚定 / 例外 / URL 锚定 / 通配 / 正则 /
+! hosts / dnsmasq / IPv4 网段 / $domain 作用域 / 资源类型 / $badfilter /
+! $denyallow / 元素隐藏族 / 非法规则
+! 期望结果见 tests/expect.tsv，由 CorpusConsistencyTest 逐条断言。
+! ============================================================
+[Adblock Plus 2.0]
+
+! ---- 域名锚定与例外放行 ----
+||block-a.test^
+||block-b.test^$important
+@@||allow-a.test^
+@@||allow-b.test^$important
+@@||both-a.test^
+||both-a.test^
+@@||imp-a.test^$important
+||imp-a.test^$important
+@@||mix-a.test^
+||mix-a.test^$important
+
+! ---- URL 与路径锚定 ----
+https://cdn.test/js/tracker.js
+||path-a.test/ads/
+
+! ---- 通配符与正则 ----
+wild-*.com
+ads?banner\d+/
+
+! ---- hosts 与 dnsmasq ----
+0.0.0.0 hosts-a.test
+127.0.0.1 hosts-b.test
+1.2.3.4 rewrite-a.test
+address=/dnsmasq-a.test/
+address=/dnsmasq-b.test/9.9.9.9
+local=/dnsmasq-c.test/
+
+! ---- IPv4 网段 ----
+10.10.0.0/16
+
+! ---- $domain 作用域 ----
+||scoped.test^$domain=site-a.test
+||scoped-ex.test^$domain=~site-a.test
+
+! ---- 资源类型 ----
+||typed.test^$script
+||typed-all.test^
+
+! ---- $badfilter ----
+||bad.test^
+||bad.test^$badfilter
+
+! ---- $denyallow ----
+@@||deny.test^$denyallow=blocked.deny.test
+
+! ---- 元素隐藏与脚本注入族（由 CosmeticRuleTest 单独断言）----
+example.test##.ad-banner
+example.test#@#.ad-banner
+example.test#$#.ad { display:none }
+example.test#?#div:has(> .sponsor)
+example.test#%#//scriptlet('abort-on-property-read', 'ads')
+example.test##^script:has-text(ads)
+
+! ---- 非法规则：必须产出带行号的 ERROR，而不是静默失效 ----
+||^$script
+
+! ---- 未识别修饰符：必须产出 WARNING ----
+||warn.test^$notamodifier
+
+# 以 # 开头的注释行必须被忽略（与 ## 元素规则区分）
+! 以 ! 开头的注释行同样被忽略

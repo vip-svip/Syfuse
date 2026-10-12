@@ -1,0 +1,42 @@
+#!/sbin/sh
+# ============================================================
+#  Magisk / KernelSU 模块安装器入口（update-binary）
+#
+#  自 Magisk 20.x 起，update-binary 是 shell 脚本而非 ELF 二进制。
+#  本脚本的职责只有一件：加载 util_functions.sh 并调用 install_module，
+#  真正的安装逻辑在 customize.sh 中。
+# ============================================================
+
+#################
+# 初始化
+#################
+umask 022
+
+# 兼容两种安装器调用约定
+OUTFD=$2
+ZIPFILE=$3
+
+ui_print() { echo "$1"; }
+
+abort() {
+  ui_print "$1"
+  exit 1
+}
+
+require_new_magisk() {
+  ui_print "*******************************"
+  ui_print " 请先安装 Magisk 20.4 或更高版本 "
+  ui_print "*******************************"
+  exit 1
+}
+
+#########################
+# 加载 util_functions.sh
+#########################
+mount /data 2>/dev/null
+
+[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
+. /data/adb/magisk/util_functions.sh
+
+install_module
+exit 0

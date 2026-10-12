@@ -1,39 +1,29 @@
 #!/system/bin/sh
-# ============================================================
-#  post-fs-data.sh —— 开机早期执行（/data 已挂载，zygote 未起）
+# ============================================================================
+#  Syfuse post-fs-data.sh
 #
-#  只做"必须在早期完成、且可完整还原"的事：
-#    - 准备数据目录权限
-#    - 恢复/安装 hosts 注入（走 bind mount，不写系统分区）
+#  执行时机：/data 已挂载、大部分系统服务尚未启动。
+#  这里**只能**做不能延后的事：创建运行时目录、准备权限。
 #
-#  明确不做的事：任何直接写入 /system 的操作（6.9 侵入原则）。
-# ============================================================
+#  明确不做的事（以及为什么）：
+#   - 不启动守护进程：此时网络与 /dev/tun 都不可用，起了也会立刻失败；
+#     启动由 service.sh（late_start）负责。
+#   - 不做 hosts 注入 / 证书挂载：M11/M8 交付后在此添加，
+#     且**必须**同时登记还原清单 —— 否则违反提示词 3.5
+#     "任何无法自动还原的操作不允许实现"。
+# ============================================================================
 MODDIR=${0%/*}
-DATA_DIR=/data/adb/syfuse
-LOG="$DATA_DIR/post-fs-data.log"
+DATA_DIR="${SYFUSE_DATA_DIR:-/data/adb/syfuse}"
 
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG" 2>/dev/null
-}
-
-mkdir -p "$DATA_DIR" 2>/dev/null
+# 数据目录必须存在且权限收敛 —— 守护进程与 App 都依赖它。
+# 用 0700 而不是 0755：里面有访问令牌。
+mkdir -p "$DATA_DIR" "$DATA_DIR/log" "$DATA_DIR/manifest" 2>/dev/null
 chmod 0700 "$DATA_DIR" 2>/dev/null
 
-# hosts 注入：仅在开关文件存在且 overlayfs 可用时执行
-if [ -f "$DATA_DIR/enable_hosts_inject" ] && [ -f "$DATA_DIR/hosts" ]; then
-  TARGET=/system/etc/hosts
-  # 先判断是否已经是我们的 bind mount，避免重复挂载
-  if ! mountpoint -q "$TARGET" 2>/dev/null; then
-    if mount -o bind "$DATA_DIR/hosts" "$TARGET" 2>/dev/null; then
-      log "hosts 注入成功（bind mount）"
-    else
-      log "hosts 注入失败：bind mount 被拒绝（设备可能不支持）"
-    fi
-  else
-    log "hosts 已是挂载点，跳过"
-  fi
-else
-  log "hosts 注入未启用，跳过"
+# 令牌文件权限兜底：即使被别的进程改过，开机时也拉回 0600。
+# 这一步很便宜，但能防住"某次误操作让令牌变成全局可读"。
+if [ -f "$DATA_DIR/api.token" ]; then
+  chmod 0600 "$DATA_DIR/api.token" 2>/dev/null
 fi
 
 exit 0

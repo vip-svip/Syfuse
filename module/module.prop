@@ -2,9 +2,8 @@ id=syfuse
 name=Syfuse · 融合代理
 version=v0.1.0
 versionCode=1
-# updateJson 必须是可匿名访问的地址。仓库默认建为 private，
-# 因此该地址在仓库公开前不可用——这是有意登记的已知前提，不是疏漏。
-# 仓库公开后无需修改本行即可生效。
-updateJson=https://raw.githubusercontent.com/vipsvip/Syfuse/main/update.json
+# updateJson 必须可匿名访问。仓库为 private 期间该地址不可用 ——
+# 这是有意登记的已知前提，不是疏漏；仓库公开后本行无需修改即生效。
+updateJson=https://raw.githubusercontent.com/vip-svip/Syfuse/main/update.json
 author=vip-svip
-description=原生 Compose 网络代理客户端 + KernelSU/Magisk 特权层。过滤规则语义与工程验证纪律参考 SY-Fusion；内核静态内置，卸载零残留。
+description=Shadowrocket 超集：原生 Compose 代理客户端 + KernelSU/Magisk 模块。模块提供系统级能力（DNS/MITM/过滤/Hook），App 提供界面与配置，两者可各自独立工作。内核静态内置，卸载零残留。

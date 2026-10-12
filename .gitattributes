@@ -1,0 +1,74 @@
+# =============================================================================
+# Syfuse .gitattributes
+#
+# 提示词 16.1 要求：统一 LF，二进制标记 binary。
+# 统一换行的意义不只是整洁 —— tools/verify_files.py 比对远程与本地内容时，
+# CRLF/LF 差异会造成全量误报，掩盖真实差异。
+# =============================================================================
+
+# 默认：文本文件统一 LF
+* text=auto eol=lf
+
+# ---- 明确的文本类型 ----
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.java      text eol=lf
+*.xml       text eol=lf
+*.gradle    text eol=lf
+*.properties text eol=lf
+*.toml      text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.pro       text eol=lf
+*.sh        text eol=lf
+*.py        text eol=lf
+*.go        text eol=lf
+*.cfg       text eol=lf
+*.conf      text eol=lf
+NOTICE      text eol=lf
+LICENSE     text eol=lf
+
+# ---- Shell 脚本必须可执行 ----
+*.sh            text eol=lf
+package.sh      text eol=lf executable
+module/*.sh     text eol=lf executable
+tests/*.sh      text eol=lf executable
+*.py            text eol=lf executable
+
+# 模块安装入口必须保留可执行位，否则模块刷不进去
+module/META-INF/com/google/android/update-binary text eol=lf
+module/META-INF/com/google/android/updater-script text eol=lf
+
+# ---- 二进制文件 ----
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.ttf       binary
+*.otf       binary
+*.woff      binary
+*.woff2     binary
+*.zip       binary
+*.jar       binary
+*.aar       binary
+*.apk       binary
+*.so        binary
+*.a         binary
+*.srs       binary
+*.mrs       binary
+*.mmdb      binary
+*.jks       binary
+*.keystore  binary
+
+# ---- 生成文件：不显示在 diff 中 ----
+tests/perf_results.txt  linguist-generated=true
+tests/screenshots/**    linguist-generated=true
+
+# ---- 语言标注（影响 GitHub 语言统计）----
+# 把 Go 内核源码正确计入 Go，而非被生成的绑定文件淹没
+src/**/*.go     linguist-language=Go

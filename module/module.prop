@@ -1,0 +1,7 @@
+id=syfuse
+name=Syfuse · 融合代理
+version=v1.0.0
+versionCode=10000
+updateJson=https://raw.githubusercontent.com/vip-svip/Syfuse/main/update.json
+author=vip-svip
+description=Shadowrocket 级代理客户端 × AdGuard Home 融合过滤引擎。Compose 原生界面、核心静态内置、可选 root/LSPosed 特权增强；卸载零残留，不占 VPN 通道以外资源。

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Syfuse 英文字符串。
+  提示词 7.5 要求中英双语起步、字符串全量走资源文件、不硬编码文案。
+  默认 (values/) 目录为英文，中文在 values-zh/ 下覆盖。
+-->
+<resources>
+    <string name="app_name">Syfuse</string>
+    <string name="app_subtitle">Fusion Proxy</string>
+
+    <!-- 底部导航 -->
+    <string name="tab_home">Home</string>
+    <string name="tab_nodes">Nodes</string>
+    <string name="tab_rules">Rules</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- 首页 -->
+    <string name="home_connection_switch">Connection</string>
+    <string name="state_disconnected">Disconnected</string>
+    <string name="state_connecting">Connecting</string>
+    <string name="state_connected">Connected</string>
+    <string name="state_error">Error</string>
+    <string name="home_routing_mode">Routing</string>
+    <string name="home_current_profile">Profile</string>
+    <string name="home_current_node">Node</string>
+    <string name="home_upload">Upload</string>
+    <string name="home_download">Download</string>
+    <string name="home_quick_actions">Quick Actions</string>
+    <string name="action_speed_test">Speed Test</string>
+    <string name="action_update_subscription">Update Subscription</string>
+    <string name="action_flush_dns">Flush DNS Cache</string>
+    <string name="action_view_connections">Connections</string>
+    <string name="home_filter_hits">Blocked Rules</string>
+    <string name="no_profile">No profile</string>
+    <string name="no_node">No node</string>
+
+    <!-- 节点 -->
+    <string name="nodes_title">Nodes</string>
+    <string name="nodes_search_hint">Search nodes</string>
+    <string name="nodes_pull_to_test">Pull to test latency</string>
+    <string name="nodes_batch_selected">%1$d selected</string>
+    <string name="nodes_latency_ms">%1$d ms</string>
+    <string name="nodes_never_tested">Not tested</string>
+    <string name="nodes_empty_title">No nodes yet</string>
+    <string name="nodes_empty_hint">Import a subscription URL or scan a QR code to add nodes.</string>
+    <string name="action_import_subscription">Import subscription</string>
+
+    <!-- 规则 -->
+    <string name="rules_title">Rules</string>
+    <string name="rules_segment_routing">Routing</string>
+    <string name="rules_segment_rulesets">Rule Sets</string>
+    <string name="rules_segment_lint">Lint</string>
+    <string name="rules_segment_test">Test</string>
+    <string name="rules_segment_filter">Filter</string>
+    <string name="rules_source_label">Source</string>
+    <string name="rules_hit_count">Hits: %1$d</string>
+    <string name="rules_add_source">Add rule source</string>
+    <string name="rules_routing_empty">No routing rules</string>
+    <string name="rules_routing_desc">Routing rules decide which proxy a request takes.</string>
+    <string name="rules_rulesets_empty">No rule sets</string>
+    <string name="rules_rulesets_desc">Remote rule sets with hash verification and retry.</string>
+    <string name="rules_lint_empty">No syntax problems found</string>
+    <string name="rules_lint_desc">Checks syntax errors, conflicts, and unreachable rules.</string>
+    <string name="rules_test_empty">Run a rule test</string>
+    <string name="rules_test_desc">Enter a domain, IP, app, or port to trace the matching path.</string>
+    <string name="rules_filter_empty">No filter rules</string>
+    <string name="rules_filter_desc">AdGuard Home × uBlock Origin syntax, fully offline.</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_search_hint">Search settings</string>
+    <string name="settings_no_match">No settings match your search</string>
+    <string name="settings_group_general">General</string>
+    <string name="settings_group_network_dns">Network &amp; DNS</string>
+    <string name="settings_group_tunnel">Tunnel &amp; Core</string>
+    <string name="settings_group_https_decryption">HTTPS Decryption</string>
+    <string name="settings_group_scripts">Scripts &amp; Rewrites</string>
+    <string name="settings_group_subscription">Subscription &amp; Backup</string>
+    <string name="settings_group_rules">Rules</string>
+    <string name="settings_group_stats_privacy">Statistics &amp; Privacy</string>
+    <string name="settings_group_privileged">Privileged &amp; Enhancements</string>
+    <string name="settings_group_lab">Lab</string>
+    <string name="settings_group_about">About</string>
+
+    <!-- 设置项 -->
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_desc">Light, dark, follow system, or AMOLED black</string>
+    <string name="settings_dynamic_color">Dynamic Color</string>
+    <string name="settings_dynamic_color_desc">Use the system wallpaper palette when available</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Interface language; follows system by default</string>
+    <string name="settings_expert_mode">Expert Mode</string>
+    <string name="settings_expert_mode_desc">Reveal advanced options hidden by default</string>
+    <string name="settings_autostart">Start on Boot</string>
+    <string name="settings_autostart_desc">Launch the tunnel automatically after reboot</string>
+
+    <!-- 风险等级标记（提示词 5.10 要求每项都标注） -->
+    <string name="risk_safe">Safe</string>
+    <string name="risk_advanced">Advanced</string>
+    <string name="risk_dangerous">Dangerous</string>
+
+    <!-- 通用四态（提示词 7.3） -->
+    <string name="state_loading">Loading…</string>
+    <string name="state_empty_title">Nothing here yet</string>
+    <string name="state_error_title">Something went wrong</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_restore_default">Restore recommended</string>
+    <string name="action_undo">Undo</string>
+
+    <!-- 尚未实现（M1 阶段的诚实提示，对应红线条 R4：不造假） -->
+    <string name="not_implemented_title">Not implemented yet</string>
+    <string name="not_implemented_desc">This feature arrives in a later milestone.</string>
+</resources>

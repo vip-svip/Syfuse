@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      应用名。与 ui 模块的 strings.xml 分开维护：
+      app 模块是最终 APK 的资源合并方，这里的 app_name 会覆盖库模块的同名值。
+      保持两处一致由 tests/run_module_checks.sh 校验。
+    -->
+    <string name="app_name">Syfuse</string>
+</resources>

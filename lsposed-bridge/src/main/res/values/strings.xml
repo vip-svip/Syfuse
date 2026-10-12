@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LSPosed 模块作用域：本模块声明的作用域包名。M11 填充真实目标。 -->
+<resources>
+    <string name="lsposed_module_description">Syfuse LSPosed bridge — injects user CA trust and per-app proxy overrides into selected apps.</string>
+
+    <!--
+      作用域数组当前为空：M1 尚未实现任何 Hook，声明作用域会让 LSPosed
+      把一个什么都不做的模块挂到目标 App 进程里，徒增风险。
+      M11 实现 Hook 时在此填入目标包名。
+    -->
+    <string-array name="lsposed_scope" />
+</resources>

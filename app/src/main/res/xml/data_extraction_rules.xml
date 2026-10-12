@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  数据提取与备份规则。
+
+  红线条 R5 要求密钥不入库、不落明文。因此：
+  - 排除全部加密凭据存储
+  - 排除 DataStore（含 apiToken）
+  - 排除 CA 私钥目录
+  允许备份的只有用户可重建的偏好设置。
+
+  注意 allowBackup 在清单中已设为 false，这里仍显式声明规则，
+  是为了防止将来误把 allowBackup 改为 true 时凭据被意外带走 —— 双保险。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

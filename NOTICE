@@ -1,0 +1,147 @@
+# NOTICE — 第三方组件与许可清单
+
+Syfuse 为 GPL-3.0-or-later 项目。本文件列出全部第三方组件、其版本与许可，
+以及本项目在许可层面的合规说明。**任何新增依赖都必须同步更新本文件。**
+
+---
+
+## 1. 代理内核
+
+### sing-box
+
+| 项 | 值 |
+|---|---|
+| 项目 | SagerNet/sing-box |
+| 版本 | **v1.14.3**（【待核实】M2 接入时锁定确切 commit） |
+| 许可 | **GPL-3.0-or-later** |
+| 使用方式 | 静态链接（`gomobile bind` 产出 AAR） |
+| 版权 | Copyright (C) 2022 nekohasekai `<contact-sagernet@sekai.icu>` |
+
+**许可推导：** sing-box 为 GPL-3.0-or-later，本项目静态链接其代码，
+因此本项目**必须**以 GPL-3.0-or-later 分发。这也是本项目选择该许可的唯一原因。
+
+**附加条款（重要）：** sing-box 的 LICENSE 在 GPL 正文后含以下条款：
+
+> In addition, no derivative work may use the name or imply association
+> with this application without prior consent.
+
+**合规措施：**
+1. 本项目命名 `Syfuse`、包名 `io.github.vipsvip.syfuse` 与 sing-box 无任何名称关联
+2. 本文档及 README 提及 sing-box 时**仅作第三方组件署名**，不使用
+   「官方」「合作」「认证」「推荐」等暗示关联的措辞
+3. 不使用 sing-box 的 Logo、图标或名称作为本项目的品牌元素
+
+### mihomo（v2 计划）
+
+| 项 | 值 |
+|---|---|
+| 项目 | MetaCubeX/mihomo |
+| 版本 | v1.19.32（v2 接入时复核） |
+| 许可 | **MIT** |
+| 使用方式 | 尚未接入（M1–M12 仅内置 sing-box，见 README 的架构说明） |
+
+**许可说明：** mihomo 为 MIT 许可，**不具传染性**。本项目整体仍因 sing-box
+而为 GPL-3.0-or-later。若 v2 接入 mihomo，MIT 与 GPL-3.0-or-later 可共存于同一
+分发物（MIT 兼容 GPL），不产生许可冲突。
+
+---
+
+## 2. GEO 数据（地理与站点分类数据）
+
+### 计划使用的数据集
+
+| 数据集 | 来源 | 许可 | 状态 |
+|---|---|---|---|
+| GeoIP（国家/地区 IP 段） | 【待核实】 | 【待核实】 | **未最终确定** |
+| GeoSite（站点分类） | 【待核实】 | 【待核实】 | **未最终确定** |
+
+### ⚠️ 待核实事项与处理策略
+
+**当前状态：** 数据来源与许可**尚未确定**。这直接影响分发合规性，因此必须
+在引入前解决。
+
+**核实方法：**
+1. 查阅 sing-box 官方数据仓库（`sing-box-geosite` / `sing-box-geoip`）的 LICENSE
+2. 若数据源自 GeoLite2（MaxMind）：需署名，且其条款限制再分发 ——
+   此时改为**构建时下载 + 设备首次运行可选拉取**，而非随包分发
+3. 若源自社区数据集（如 Loyalsoldier/v2ray-rules-dat 等）：逐项核实其许可
+
+**处理原则：**
+- 许可允许再分发 → 随包内置，在本文档标注来源与许可
+- 许可不允许再分发 → 不随包分发，改为运行时拉取（**不违反红线条 R2**：
+  R2 约束的是内核二进制，不是数据文件）
+- 无论如何：在本文档如实标注，不省略、不含糊
+
+**M1–M8 的实际影响：** 无。M1–M8 不使用 GEO 数据；该问题须在 **M4（规则与分流）
+之前**解决，因为 GEOIP/GEOSITE 规则类型是 M4 的交付内容。
+
+---
+
+## 3. 主要开源库
+
+| 库 | 用途 | 许可 |
+|---|---|---|
+| AndroidX（核心、Compose、Lifecycle、Navigation、Room、DataStore） | 应用框架与 UI | Apache-2.0 |
+| Jetpack Compose（含 Material 3） | 声明式 UI | Apache-2.0 |
+| Kotlin / kotlinx.coroutines / kotlinx.serialization | 语言与异步、序列化 | Apache-2.0 |
+| Hilt / Dagger | 依赖注入 | Apache-2.0 |
+| OkHttp | HTTP 客户端 | Apache-2.0 |
+| libsu（计划 M11 接入，尚未引入） | root shell 会话 | Apache-2.0 |
+| androidx.glance（计划 M8 接入，尚未引入） | 桌面小组件 | Apache-2.0 |
+| JUnit 5 / Truth / Turbine / Robolectric（仅测试） | 测试 | EPL-2.0 / Apache-2.0 |
+| desugar_jdk_libs | Java 8+ API 向下兼容 | GPL-2.0 with Classpath Exception |
+
+**说明：** 上表中标注「计划接入」的库在当前里程碑**尚未引入依赖**，
+列出是为了让许可清单的完整意图可见。引入时会更新此表。
+
+---
+
+## 4. 参考项目致谢（按项目名）
+
+### SY-Fusion
+
+本项目在**过滤规则语义**与**工程验证纪律**两方面参考了开源项目 **SY-Fusion**。
+
+**继承的内容：**
+- 过滤规则语义：AdGuard Home 规则语法与 uBlock Origin 匹配模型的融合，
+  以及「重要放行 > 重要拦截 > 普通放行 > 普通拦截 > 未命中」的优先级模型
+- 工程验证纪律：多层自检体系（静态校验 + 单测 + 端到端 + 资产基线 + 性能基准）
+- 性能教训：全屏模糊层导致帧耗时与丢帧率恶化的实测结论
+
+**未继承的内容：**
+- 其 Shell + awk 的实现方式（本项目为 Kotlin + Go 原生实现）
+- 其 WebView 面板（本项目禁止 WebView 承载界面，见红线条 R1）
+- 其模块 id `SY`（本项目模块 id 为 `syfuse`）
+- **其任何源代码**（本项目不复制 SY-Fusion 的代码）
+
+**说明：** 上述规则语义源自公开的 AdGuard / uBlock Origin 规范，
+SY-Fusion 是该语义的一种实现。本项目独立实现该语义。
+
+**关于 SY-Fusion 的许可：** 该仓库根目录未包含 LICENSE 文件。因此本项目
+**不复制其任何代码**，仅参考其公开描述的规则语义与工程实践。
+若未来需引用其代码，必须先澄清许可。
+
+---
+
+## 5. 本项目许可摘要
+
+```
+Syfuse — Shadowrocket 级 Android 代理客户端与融合过滤引擎
+Copyright (C) 2026 vip-svip
+
+以 GPL-3.0-or-later 分发。完整文本见 LICENSE。
+```
+
+**推导依据（供他人核对）：**
+
+1. 本项目静态链接 sing-box（GPL-3.0-or-later）
+2. GPL 的传染性要求衍生作品同样以 GPL 分发
+3. 故本项目为 GPL-3.0-or-later
+
+**为何不选 MIT：** 本项目**不能**选择 MIT。不是「偏好」问题，而是许可约束 ——
+静态链接 GPL 代码的衍生作品必须为 GPL。若未来仅使用 MIT 许可的内核
+（如 mihomo）且不使用任何 GPL 组件，则可重新评估为更宽松的许可。
+
+---
+
+*本文件在每次依赖变更时必须同步更新。*

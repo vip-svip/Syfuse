@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Syfuse 中文字符串（简体）。
+  与 values/strings.xml 键一一对应。新增字符串时必须两边同步，
+  由 tests/run_module_checks.sh 的字符串完整性检查强制保证。
+-->
+<resources>
+    <string name="app_name">Syfuse</string>
+    <string name="app_subtitle">融合代理</string>
+
+    <!-- 底部导航 -->
+    <string name="tab_home">首页</string>
+    <string name="tab_nodes">节点</string>
+    <string name="tab_rules">规则</string>
+    <string name="tab_settings">设置</string>
+
+    <!-- 首页 -->
+    <string name="home_connection_switch">连接</string>
+    <string name="state_disconnected">未连接</string>
+    <string name="state_connecting">连接中</string>
+    <string name="state_connected">已连接</string>
+    <string name="state_error">错误</string>
+    <string name="home_routing_mode">全局路由</string>
+    <string name="home_current_profile">配置</string>
+    <string name="home_current_node">节点</string>
+    <string name="home_upload">上行</string>
+    <string name="home_download">下行</string>
+    <string name="home_quick_actions">快捷动作</string>
+    <string name="action_speed_test">测速</string>
+    <string name="action_update_subscription">更新订阅</string>
+    <string name="action_flush_dns">清理 DNS 缓存</string>
+    <string name="action_view_connections">查看连接</string>
+    <string name="home_filter_hits">规则拦截</string>
+    <string name="no_profile">无配置</string>
+    <string name="no_node">无节点</string>
+
+    <!-- 节点 -->
+    <string name="nodes_title">节点</string>
+    <string name="nodes_search_hint">搜索节点</string>
+    <string name="nodes_pull_to_test">下拉测速</string>
+    <string name="nodes_batch_selected">已选 %1$d 项</string>
+    <string name="nodes_latency_ms">%1$d 毫秒</string>
+    <string name="nodes_never_tested">未测速</string>
+    <string name="nodes_empty_title">还没有节点</string>
+    <string name="nodes_empty_hint">导入订阅链接或扫描二维码以添加节点。</string>
+    <string name="action_import_subscription">导入订阅</string>
+
+    <!-- 规则 -->
+    <string name="rules_title">规则</string>
+    <string name="rules_segment_routing">分流规则</string>
+    <string name="rules_segment_rulesets">规则集</string>
+    <string name="rules_segment_lint">规则体检</string>
+    <string name="rules_segment_test">规则测试</string>
+    <string name="rules_segment_filter">过滤规则</string>
+    <string name="rules_source_label">来源</string>
+    <string name="rules_hit_count">命中：%1$d</string>
+    <string name="rules_add_source">添加规则源</string>
+    <string name="rules_routing_empty">暂无分流规则</string>
+    <string name="rules_routing_desc">分流规则决定请求走哪条代理。</string>
+    <string name="rules_rulesets_empty">暂无规则集</string>
+    <string name="rules_rulesets_desc">远程规则集，支持哈希校验与失败重试。</string>
+    <string name="rules_lint_empty">未发现语法问题</string>
+    <string name="rules_lint_desc">检查语法错误、冲突与永不命中的规则。</string>
+    <string name="rules_test_empty">运行一次规则测试</string>
+    <string name="rules_test_desc">输入域名、IP、应用或端口，追踪完整匹配链路。</string>
+    <string name="rules_filter_empty">暂无过滤规则</string>
+    <string name="rules_filter_desc">AdGuard Home × uBlock Origin 语法，完全离线可用。</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_search_hint">搜索设置</string>
+    <string name="settings_no_match">未找到匹配的设置项</string>
+    <string name="settings_group_general">通用</string>
+    <string name="settings_group_network_dns">网络与 DNS</string>
+    <string name="settings_group_tunnel">隧道与内核</string>
+    <string name="settings_group_https_decryption">HTTPS 解密</string>
+    <string name="settings_group_scripts">脚本与重写</string>
+    <string name="settings_group_subscription">订阅与备份</string>
+    <string name="settings_group_rules">规则</string>
+    <string name="settings_group_stats_privacy">统计与隐私</string>
+    <string name="settings_group_privileged">特权与增强</string>
+    <string name="settings_group_lab">实验室</string>
+    <string name="settings_group_about">关于</string>
+
+    <!-- 设置项 -->
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_desc">浅色、深色、跟随系统或 AMOLED 纯黑</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_desc">可用时使用系统壁纸配色</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_language_desc">界面语言，默认跟随系统</string>
+    <string name="settings_expert_mode">专家模式</string>
+    <string name="settings_expert_mode_desc">揭示默认隐藏的高级选项</string>
+    <string name="settings_autostart">开机自启</string>
+    <string name="settings_autostart_desc">重启后自动启动隧道</string>
+
+    <!-- 风险等级标记 -->
+    <string name="risk_safe">安全</string>
+    <string name="risk_advanced">进阶</string>
+    <string name="risk_dangerous">危险</string>
+
+    <!-- 通用四态 -->
+    <string name="state_loading">加载中…</string>
+    <string name="state_empty_title">暂无内容</string>
+    <string name="state_error_title">出现问题</string>
+    <string name="action_retry">重试</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_restore_default">恢复推荐值</string>
+    <string name="action_undo">撤销</string>
+
+    <!-- 尚未实现 -->
+    <string name="not_implemented_title">功能尚未实现</string>
+    <string name="not_implemented_desc">该功能将在后续里程碑中提供。</string>
+</resources>

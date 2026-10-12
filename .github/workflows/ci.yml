@@ -1,0 +1,279 @@
+name: CI
+
+# 提示词第 12 部分：全部验证脚本在 CI 运行，任一失败阻断合并。
+# 提示词 16.8 完成判定：「CI 在干净环境全绿，且确实跑了第 12 部分的全部检查
+# （不是只跑 assembleDebug）」。
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 最小权限原则：CI 只需要读代码
+permissions:
+  contents: read
+
+concurrency:
+  # 同一分支的旧运行自动取消，避免 PR 反复推送时堆积
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 静态检查：无需 Android SDK，跑得最快，放最前面以获得最快反馈
+  # ---------------------------------------------------------------------------
+  static-checks:
+    name: 静态合规检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 模块级静态校验（R1/R2/R3/R5 + 标识 + ABI + i18n）
+        env:
+          PYTHON_BIN: python3
+        run: bash tests/run_module_checks.sh
+
+      - name: UI 资产比对（防止入口静默丢失）
+        run: python tests/ui_assets_check.py
+
+      - name: 密钥扫描（独立再跑一次，确保职责清晰）
+        run: python tools/scan_secrets.py
+
+  # ---------------------------------------------------------------------------
+  # 单元测试：需要 JDK，不需要 Android SDK（纯 JVM 逻辑）
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 运行单元测试
+        run: bash tests/run_unit.sh
+
+      - name: 上传测试报告（失败时用于定位）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: '**/build/reports/tests/**'
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 构建：需要 Android SDK
+  # ---------------------------------------------------------------------------
+  build:
+    name: 构建 APK
+    runs-on: ubuntu-latest
+    needs: [static-checks]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 生成 Gradle Wrapper（若仓库内尚无）
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          chmod +x ./gradlew
+
+      - name: 构建 debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: 检查 APK 体积（25MB 单 ABI 红线，提示词第 11 部分）
+        run: |
+          echo "==> 各 ABI APK 体积"
+          FOUND=0
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            [ -f "$apk" ] || continue
+            FOUND=1
+            SIZE_BYTES=$(stat -c%s "$apk")
+            SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+            echo "  $(basename "$apk"): ${SIZE_MB} MB"
+            if [ "$SIZE_MB" -gt 25 ]; then
+              echo "::error::APK 体积 ${SIZE_MB}MB 超过 25MB 红线：$(basename "$apk")"
+              exit 1
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::warning::未找到 APK 产物，跳过剩体积检查"
+          fi
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 模块 ZIP：验证模块骨架完整且可打包
+  # ---------------------------------------------------------------------------
+  module-package:
+    name: 模块 ZIP 校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 zip
+        run: sudo apt-get update && sudo apt-get install -y zip unzip
+
+      - name: 校验模块骨架完整性
+        run: |
+          echo "==> 检查模块必需文件"
+          MISSING=0
+          for f in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh \
+                   META-INF/com/google/android/update-binary META-INF/com/google/android/updater-script; do
+            if [ ! -f "module/$f" ]; then
+              echo "::error::模块缺少必需文件：module/$f"
+              MISSING=$((MISSING + 1))
+            else
+              echo "  OK  module/$f"
+            fi
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
+
+      - name: 校验 module.prop 标识
+        run: |
+          echo "==> module.prop 内容"
+          cat module/module.prop
+          echo ""
+          # 模块 id 必须为 syfuse（提示词 1.1 固定标识）
+          if ! grep -q '^id=syfuse$' module/module.prop; then
+            echo "::error::module.prop 的 id 不是 syfuse"
+            exit 1
+          fi
+          # 版本号必须存在且非占位
+          if grep -qE '^(version|versionCode)=$' module/module.prop; then
+            echo "::error::module.prop 存在空的 version/versionCode"
+            exit 1
+          fi
+          echo "  OK  id 与版本号合规"
+
+      - name: 校验 Shell 脚本语法
+        run: |
+          echo "==> 校验模块脚本语法"
+          FAILED=0
+          for script in module/*.sh; do
+            if bash -n "$script"; then
+              echo "  OK  $script"
+            else
+              echo "::error::语法错误：$script"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          [ "$FAILED" -eq 0 ] || exit 1
+
+      - name: 打包并校验 ZIP
+        run: |
+          # 复用与 package.sh 相同的打包路径，避免 CI 与发布脚本行为分叉。
+          # tools/zip_module.py 内含「>= 8 个文件」断言，可防住空 ZIP 静默通过。
+          python3 tools/zip_module.py "$PWD" "$PWD/dist/syfuse-test.zip"
+          unzip -t dist/syfuse-test.zip > /dev/null
+          echo "  ZIP 完整性 OK"
+
+          # 校验模块必需文件齐备（与 package.sh 第 3 步一致）
+          ZIP_CONTENTS=$(unzip -l dist/syfuse-test.zip | awk '{print $4}')
+          MISSING=0
+          for required in module.prop customize.sh post-fs-data.sh service.sh action.sh uninstall.sh; do
+            if ! echo "$ZIP_CONTENTS" | grep -qx "$required"; then
+              echo "::error::模块 ZIP 缺少必需文件：$required"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
+          echo "  ✓ 模块必需文件齐备"
+
+          sha256sum dist/syfuse-test.zip
+
+  # ---------------------------------------------------------------------------
+  # 双语资源一致性（独立 job，便于快速定位问题）
+  # ---------------------------------------------------------------------------
+  i18n:
+    name: 国际化资源校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 中英字符串键一致性
+        run: |
+          EN="app/src/main/res/values/strings.xml ui/src/main/res/values/strings.xml"
+          ZH_EN="app/src/main/res/values-zh/strings.xml ui/src/main/res/values-zh/strings.xml"
+
+          extract_keys() {
+            for f in $1; do
+              [ -f "$f" ] && grep -oE 'name="[^"]+"' "$f"
+            done | sort -u
+          }
+
+          EN_KEYS=$(extract_keys "$EN")
+          ZH_KEYS=$(extract_keys "$ZH_EN")
+
+          MISSING_ZH=$(comm -23 <(echo "$EN_KEYS") <(echo "$ZH_KEYS") || true)
+          MISSING_EN=$(comm -13 <(echo "$EN_KEYS") <(echo "$ZH_KEYS") || true)
+
+          if [ -n "$MISSING_ZH" ]; then
+            echo "::error::中文资源缺失键"
+            echo "$MISSING_ZH"
+            exit 1
+          fi
+          if [ -n "$MISSING_EN" ]; then
+            echo "::error::英文资源缺失键"
+            echo "$MISSING_EN"
+            exit 1
+          fi
+
+          echo "  OK  中英字符串键一致（$(echo "$EN_KEYS" | wc -l) 个）"
+
+  # ---------------------------------------------------------------------------
+  # 门禁：全部门禁在此汇总，分支保护只需勾选这一个 job
+  # ---------------------------------------------------------------------------
+  gate:
+    name: 合并门禁
+    runs-on: ubuntu-latest
+    needs: [static-checks, unit-tests, build, module-package, i18n]
+    if: always()
+    steps:
+      - name: 校验上游 job 全部成功
+        run: |
+          if [ "${{ needs.static-checks.result }}" != "success" ] ||
+             [ "${{ needs.unit-tests.result }}" != "success" ] ||
+             [ "${{ needs.build.result }}" != "success" ] ||
+             [ "${{ needs.module-package.result }}" != "success" ] ||
+             [ "${{ needs.i18n.result }}" != "success" ]; then
+            echo "::error::存在失败的检查项，阻断合并"
+            echo "static-checks: ${{ needs.static-checks.result }}"
+            echo "unit-tests: ${{ needs.unit-tests.result }}"
+            echo "build: ${{ needs.build.result }}"
+            echo "module-package: ${{ needs.module-package.result }}"
+            echo "i18n: ${{ needs.i18n.result }}"
+            exit 1
+          fi
+          echo "全部门禁通过"

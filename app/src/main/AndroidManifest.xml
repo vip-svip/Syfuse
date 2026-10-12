@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Syfuse 应用清单。
+
+  关键约束（对应提示词第 3.3 节六条真红线）：
+  - R1 主界面原生：本清单不注册任何 WebView 承载组件，也不含 android:usesCleartextTraffic 之类的
+    WebView 配套项；由 tests/run_module_checks.sh 静态扫描强制
+  - R3 零遥测：不声明 INTERNET 之外的任何上报相关权限；INTERNET 用途在下方注释逐条说明
+  - R6 危险能力显式告知：MITM 证书、无障碍、通知监听三项能力对应的组件
+    在 M6/M10 注册时会附带权限说明，且默认关闭
+
+  INTERNET 权限用途说明（提示词 R3 要求逐一出网调用点给出用途）：
+  1. 拉取用户显式配置的订阅 URL
+  2. 下载用户显式配置的远程规则集
+  3. 代理流量本身（这是产品核心功能）
+  4. 检查更新（可选，用户可关闭）
+  上述四项全部由用户显式配置触发，无任何后台自动上报。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      前台服务：VPN 隧道必须常驻，Android 8+ 要求前台服务 + 通知。
+      类型在 Android 14+ 必须显式声明，否则会抛 MissingForegroundServiceTypeException。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 开机自启（提示词 5.9）。默认关闭，用户显式开启后才生效。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:name=".SyfuseApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Syfuse"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Syfuse">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              URL Scheme（提示词 5.9）：syfuse://import?url=... 等。
+              M1 只声明 scheme 入口，具体路由解析在 M8 实现。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="syfuse" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          VpnService 声明在 M2 添加。M1 不声明的原因：
+          声明后会出现在系统 VPN 列表中，用户可以选中并授权，
+          但 M1 的服务没有任何隧道能力 —— 那是一个「能选中但没用」的入口，
+          属提示词 2.3 第 4 条禁止的无存在理由组件。
+        -->
+
+    </application>
+
+</manifest>

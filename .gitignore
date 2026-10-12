@@ -1,0 +1,91 @@
+# =============================================================================
+# Syfuse .gitignore
+#
+# 红线条 R5 要求：仓库内无任何密钥、*.jks、local.properties。
+# 本文件是 R5 的第一道防线，tools/scan_secrets.py 是第二道。
+# =============================================================================
+
+# ---- 签名与密钥（R5 核心）----
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+*.pem
+!docs/**.pem
+keystore.properties
+signing.properties
+local.properties
+
+# ---- Gradle ----
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+gradle-app.setting
+.gradletasknamecache
+captures/
+
+# ---- Kotlin / JVM ----
+.kotlin/
+*.class
+*.jar
+*.hprof
+hs_err_pid*
+
+# ---- Android ----
+*.apk
+*.aab
+*.ap_
+*.dex
+output.json
+release/
+!gradle/wrapper/*.jar
+
+# ---- Go（内核构建产物）----
+src/syfuse
+src/*.so
+src/*.a
+src/*.aar
+*.srs
+!tests/corpus/**/*.srs
+gomobile/
+
+# ---- IDE ----
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- 构建与打包产物 ----
+dist/
+*.zip
+!module/**/*.zip
+
+# ---- Python（工具脚本）----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ---- 测试产物 ----
+tests/screenshots/
+tests/perf_results.txt
+tests/corpus/actual.tsv
+*.log
+
+# ---- 操作系统 ----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini

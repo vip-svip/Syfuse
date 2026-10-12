@@ -1,0 +1,152 @@
+name: Release
+
+# 提示词 16.5 的自更新链路：
+#   tag 触发 → 构建 → 打包 → SHA-256 → 更新 update.json → 创建 Release
+#
+# 签名密钥全部走 CI Secret（提示词 16.6 第 1 条）：
+#   KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+# 仓库内不得出现任何密钥文件。
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（含 v 前缀），例如 v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # tag 触发时用 tag 名
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          # 去掉 v 前缀作为语义化版本
+          SEMVER="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+          echo "解析出版本：${VERSION}（语义化：${SEMVER}）"
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 生成 Gradle Wrapper（若缺失）
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          chmod +x ./gradlew
+
+      # ---------------------------------------------------------------------
+      # 签名配置：密钥从 Secret 还原到临时文件，构建后立即删除
+      # ---------------------------------------------------------------------
+      - name: 还原签名密钥
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.jks
+          cat >> app/build.gradle.kts <<EOF
+
+          android {
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("/tmp/release.jks")
+                      storePassword = System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias = System.getenv("KEY_ALIAS")
+                      keyPassword = System.getenv("KEY_PASSWORD")
+                  }
+              }
+          }
+          EOF
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: 构建 release APK（分 ABI）
+        run: ./gradlew :app:assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: 构建模块 ZIP 并计算 SHA-256
+        run: |
+          bash package.sh
+
+      - name: 删除临时签名密钥
+        if: always()
+        run: rm -f /tmp/release.jks
+
+      - name: 生成 Release 说明（附完整 SHA-256）
+        run: |
+          {
+            echo "## Syfuse ${{ steps.version.outputs.version }}"
+            echo ""
+            echo "### 产物校验"
+            echo ""
+            echo '```'
+            echo "== 模块 ZIP =="
+            cat dist/syfuse-*.zip.sha256 2>/dev/null || echo "(未生成)"
+            echo ""
+            echo "== APK =="
+            cat dist/apk-sha256.txt 2>/dev/null || echo "(未生成)"
+            echo '```'
+            echo ""
+            echo "### 安装"
+            echo ""
+            echo "- APK：按设备 ABI 选择对应文件安装"
+            echo "- 模块：在 KernelSU / Magisk 管理器中刷入模块 ZIP"
+            echo ""
+            echo "完整变更记录见 [CHANGELOG.md](../blob/main/CHANGELOG.md)。"
+          } > /tmp/release-notes.md
+          cat /tmp/release-notes.md
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Syfuse ${{ steps.version.outputs.version }}
+          body_path: /tmp/release-notes.md
+          draft: true
+          prerelease: false
+          files: |
+            dist/syfuse-*.zip
+            dist/syfuse-*.zip.sha256
+            dist/apk-sha256.txt
+            app/build/outputs/apk/release/*.apk
+
+      - name: 发布后回读确认（提示词 16.6 第 5 条）
+        run: |
+          echo "==> 回读远程 Release 页"
+          sleep 5
+          gh release view "${{ steps.version.outputs.version }}" \
+            --json tagName,isDraft,assets \
+            --jq '{tag: .tagName, draft: .isDraft, assets: [.assets[].name]}'
+          echo "请人工确认：Release 说明渲染正常、SHA-256 与本地一致。"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

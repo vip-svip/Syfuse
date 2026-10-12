@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色模式下的窗口背景，避免夜间冷启动白闪。 -->
+<resources>
+    <style name="Theme.Syfuse" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/syfuse_window_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

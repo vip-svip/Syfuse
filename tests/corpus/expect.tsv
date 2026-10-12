@@ -1,0 +1,22 @@
+﻿# 规则一致性语料期望表
+#
+# 提示词 6.1 要求「优先级模型必须严格实现并写入测试语料」。
+# 本文件是唯一权威的期望命中表，M9 的引擎实现直接对照它验证。
+#
+# 列定义：
+#   corpus_file      语料文件名（位于 tests/corpus/ 下）
+#   line_no          语料中的行号（1 起）
+#   query_type       查询维度：url / domain / ip / app / port
+#   query_value      具体查询值
+#   expected_action  期望动作：block / allow / rewrite / none
+#   expected_reason  期望命中的规则名或优先级说明
+#
+# 优先级模型（提示词 6.1）：
+#   重要放行 > 重要拦截 > 普通放行 > 普通拦截 > 未命中（默认放行）
+#
+# 示例行（M9 填充真实语料时保留作为格式参考）：
+# corpus_file	line_no	query_type	query_value	expected_action	expected_reason
+# network.txt	1	url	https://ads.example.com/banner.png	block	普通拦截
+# network.txt	3	url	https://good.example.com/x	allow	普通放行（例外规则 @@）
+# modifiers.txt	5	domain	important.example.com	allow	重要放行（@@ 且带 $important）
+corpus_file	line_no	query_type	query_value	expected_action	expected_reason

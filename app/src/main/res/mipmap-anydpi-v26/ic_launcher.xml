@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标。
+  设计说明：用矢量绘制而非位图，理由有三：
+  1. 不引入任何第三方图标资产（提示词 15.4 禁止版权资产搬运）
+  2. 矢量自适应任意密度，避免为每种 dpi 提供一套 PNG，直接服务体积预算
+  3. 前景图形在圆形/方形/圆角方形遮罩下都保持居中可辨识
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

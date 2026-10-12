@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用主题。
+
+  说明：Compose 应用的实际配色由 SyfuseTheme 决定，这里的 XML 主题
+  只负责「Compose 接管之前的窗口外观」——即冷启动瞬间的窗口背景与状态栏，
+  避免出现白屏闪烁（提示词 11 要求冷启动 < 800ms，视觉连续性是其一部分）。
+
+  基类选用 Material3 的 NoActionBar 变体：本应用无 XML ActionBar，
+  标题栏由 Compose 的 TopAppBar 提供。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.Syfuse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/syfuse_window_background</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
+    </style>
+
+</resources>

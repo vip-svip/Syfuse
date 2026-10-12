@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图标前景：融合意象 —— 两股流交汇于一个节点，呼应「SY-Fusion 血统的 fuse（融合）」。
+  纯几何矢量，不含任何商标或第三方图形。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 左流 -->
+    <path
+        android:pathData="M30,40 L54,54"
+        android:strokeColor="#FF7FD3F7"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+
+    <!-- 右流 -->
+    <path
+        android:pathData="M78,40 L54,54"
+        android:strokeColor="#FF7FD3F7"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+
+    <!-- 汇集后的下行流 -->
+    <path
+        android:pathData="M54,54 L54,74"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+
+    <!-- 融合节点 -->
+    <path
+        android:pathData="M54,46 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"
+        android:fillColor="#FFFFFFFF" />
+</vector>

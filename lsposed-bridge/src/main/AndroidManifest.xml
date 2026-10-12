@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LSPosed 模块声明（提示词 6.6）。
+
+  说明：M1 只声明模块身份与作用域元数据，Hook 逻辑在 M11 实现。
+  这段时间里模块**不会**做任何注入 —— 没有实现类，LSPosed 加载后即结束。
+  这是有意的：避免交付一个「看似生效但实际未验证」的 Hook 层。
+
+  三项元数据（LSPosed 要求）：
+  - xposedmodule：标记本包为 Xposed 模块
+  - xposeddescription：模块说明，显示在 LSPosed 管理器
+  - xposedminversion：兼容的最低 API 版本
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="@string/lsposed_module_description" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="93" />
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/lsposed_scope" />
+    </application>
+
+</manifest>

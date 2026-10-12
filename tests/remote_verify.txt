@@ -1,0 +1,146 @@
+# Syfuse 远端建仓与首次推送 —— 原始证据
+
+本文件是**建仓与推送环节的原始记录**，供核对。每次重新推送后会更新。
+
+- 目标仓库：`vip-svip/Syfuse`
+- 记录时间：2026-10-13（GMT+8）
+- 执行者署名：`vip-svip`（运行时解析出的账号）
+
+---
+
+## 1. 建仓前的既有状态
+
+推送前，`vip-svip/Syfuse` **已经存在**，且是**公开**的：
+
+| 项 | 值 |
+|---|---|
+| visibility | `public` |
+| 提交数 | 1 |
+| 旧提交 SHA | `cf14bef350b11add6ca36ee87a5c4cca3872abcc` |
+| 旧提交信息 | `chore(m1): 建立多模块工程骨架与验证脚手架` |
+| 旧提交时间 | 2026-10-12T13:04:39Z |
+| 仓库大小 | 147 KB |
+| 许可证检测 | `NOASSERTION` |
+
+那是一份**同一提示词的早期实现**（包名同为 `io.github.vipsvip.syfuse`、
+GPL-3.0-or-later、相同模块划分），因此本次是**覆盖**而非新建。
+
+**覆盖是不可逆动作，所以先做了三重保全**（见下一节）。仓库可见性按硬规则
+先改为 `private`，全程未自行放开为 public。
+
+## 2. 覆盖前的保全措施
+
+| 措施 | 位置 | 指向 |
+|---|---|---|
+| 本地备份分支 | `backup/upstream-m1` | `cf14bef350b11add6ca36ee87a5c4cca3872abcc` |
+| 远端备份 tag | `refs/tags/backup-m1-initial` | 同上（HTTP 201 创建成功） |
+
+回滚方式（任一）：
+
+```bash
+# 从本地分支回滚
+git push --force origin backup/upstream-m1:main
+
+# 或从远端 tag 回滚
+git push --force origin backup-m1-initial:main
+```
+
+## 3. 推送前自查（提示词 18.6 第 2 条要求贴证据）
+
+| 检查 | 结果 |
+|---|---|
+| `git status` | 干净（无输出） |
+| 待推送提交 | 2 条 |
+| `git ls-files` 过滤 `jks/keystore/p12/pfx/local.properties/.env` | **无命中** |
+| `local.properties` 是否被忽略 | 是（`.gitignore:20`） |
+| `tools/scan_secrets.py` | `PASS — 无禁止项（WARN 13 条，豁免 19 条）` |
+| 跟踪文件数 | 132 |
+
+> 说明：按文件名过滤时会命中 `data/.../CredentialVault.kt` 与 `tools/scan_secrets.py`，
+> 这两个是**文件名里含 credential/secret 的源码**，不是凭据本身。
+> 用令牌独特子串做的四重验证见第 6 节。
+
+## 4. 推送结果
+
+```
+$ git push --force -u origin main
+To https://github.com/vip-svip/Syfuse.git
+ + cf14bef...e964015 main -> main (forced update)
+branch 'main' set up to track 'origin/main'.
+```
+
+- 新 HEAD：`e964015ac097`（`chore: 补齐性能原始证据与署名一致性`）
+- 提交历史（自下而上）：
+  1. `753ad8f` `feat: Syfuse v0.1.0 骨架 —— 规则引擎、Compose 界面、Go 内核、KernelSU 模块`
+  2. `e964015` `chore: 补齐性能原始证据与署名一致性`
+
+## 5. 推送后核验
+
+### 5.1 `tools/verify_remote.py`
+
+```
+$ python tools/verify_remote.py --repo vip-svip/Syfuse --expect-public false
+== 远端核验 vip-svip/Syfuse@main ==
+  - 仓库可见性: private
+  - 默认分支: main
+  - 许可证: GPL-3.0 (GNU General Public License v3.0)
+  - 关键文件: 23/23 存在
+  - Release 数: 0
+
+[REMOTE] PASS
+```
+
+### 5.2 树一致性（path / mode / blob 逐一比对）
+
+用 Git Trees API 取远端完整树，与 `git ls-tree -r HEAD` 逐条比对：
+
+```
+  远端 HEAD   = e964015ac097
+  远端 blob 数 = 132
+  本地 blob 数 = 132
+  仅远端有     = 0
+  仅本地有     = 0
+  mode/blob 不一致 = 0
+
+  [TREE] PASS — 远端树与本地 HEAD 完全一致（path/mode/blob）
+```
+
+### 5.3 仓库元数据
+
+- 描述已设置
+- Topics：`adblock, adguard, android, jetpack-compose, kernelsu, kotlin, magisk, proxy, shadowrocket, ublock-origin`
+- `has_wiki=false`、`has_projects=false`（减少无用入口）
+
+## 6. 令牌泄露核验（四重）
+
+令牌为一次性注入，**未写入任何文件**。用令牌的独特子串做四重验证：
+
+| 检查位置 | 命中 |
+|---|---|
+| 工作区全量（含 `build/`、`.gradle/`） | 0 |
+| git 对象库（全部历史 blob） | 0 |
+| 提交历史（`git log --all -S<子串>`） | 0 |
+| 远端仓库（GitHub 代码搜索 API） | 0 |
+
+另外确认：
+
+- `.git/config` 不含令牌（remote URL 为干净的 `https://github.com/vip-svip/Syfuse.git`）
+- 未使用 `git remote set-url` 拼令牌，未使用 `credential.helper store`
+- 推送使用一次性注入：`git -c http.extraheader="Authorization: Basic <b64(x-access-token:TOKEN)>" push`
+
+> **实测更正**：提示词 1.3 建议的 `Authorization: Bearer $GH_TOKEN` 对
+> **git smart HTTP 无效**，实测返回 `remote: invalid credentials`。
+> 必须使用 Basic 且用户名为 `x-access-token`。REST API 用 Bearer 正常。
+> 这一点应反馈到提示词。
+
+## 7. 已知缺口（本次推送未解决）
+
+本次只完成「建仓 + 推送 + 核验」。以下**仍未交付**，不得视为完成：
+
+- 代理内核数据面（`Engine.Start()` 仍返回 `ErrTunnelNotImplemented`）
+- VpnService 隧道；Manifest 未声明 `BIND_VPN_SERVICE`
+- 规则引擎未接入数据面，不产生实际拦截
+- 规则引擎 p99 = 0.965 ms，**超出 0.5 ms 预算**
+- 仓库结构与提示词 18.1 不符（缺根级 `src/`、`package.sh`、`apk/`、`screenshots/`）
+- M1 要求的 `action.sh` 11 项菜单、`manifest/installed.json` 还原清单未实现
+- 未创建 Release（`Release 数: 0`）

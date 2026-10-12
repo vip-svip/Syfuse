@@ -30,6 +30,13 @@ dependencyResolutionManagement {
 
 rootProject.name = "Syfuse"
 
+// 模块划分对齐提示词 9.1：app / ui / domain / data / core / engine / daemon / privileged / hook
+//
+// 与提示词的一处差异（已在 README 登记）：core 拆成 core:common 与 core:rule 两个子工程。
+// 理由：规则引擎是纯 JVM 模块，必须能在**只有 JDK**的最小环境里独立单测
+// （CI 的最小容器、以及任何人 clone 后不装 Android SDK 也能验证规则语义）。
+// 把它和 Android 相关的 common 放同一个工程会让这个能力丧失。
+
 // ---- 应用层 ----
 include(":app")
 include(":ui")
@@ -40,9 +47,12 @@ include(":data")
 
 // ---- 内核与基础能力 ----
 include(":core:common")
-include(":core:rule") // 纯 JVM 模块：过滤规则引擎，可在无 Android SDK 环境下独立单测
+include(":core:rule") // 纯 JVM：过滤规则引擎，可在无 Android SDK 环境下独立单测
 include(":engine")
 
-// ---- 特权层 ----
+// ---- 守护进程通信（UDS + 协议客户端） ----
+include(":daemon")
+
+// ---- 特权与 Hook ----
 include(":privileged")
-include(":lsposed-bridge")
+include(":hook") // Hook 框架层：Zygisk / LSPosed / APatch 检测与装载

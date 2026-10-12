@@ -89,8 +89,9 @@ dependencies {
     implementation(project(":domain"))
     implementation(project(":data"))
     implementation(project(":engine"))
+    implementation(project(":daemon"))
     implementation(project(":privileged"))
-    implementation(project(":lsposed-bridge"))
+    implementation(project(":hook"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

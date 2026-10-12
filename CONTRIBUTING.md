@@ -61,6 +61,14 @@ tests/ui_runtime_check.sh
 tests/ui_screenshot.sh         # 截图贴到 PR 里
 ```
 
+### 不要并发跑两个 Gradle 构建
+
+在同一个项目目录上同时启动两个 Gradle 构建会争抢 `app/build/outputs/mapping/`
+下的文件，表现为 `shrinkReleaseRes` 报「拒绝访问」。
+
+这个失败**看起来像代码问题，实际是操作问题**，很容易浪费排查时间。
+`tests/` 下的脚本都是串行执行 Gradle 的；如果你自己起了并行任务，请等前一个结束。
+
 ---
 
 ## 代码约定

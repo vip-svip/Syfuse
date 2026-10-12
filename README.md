@@ -437,11 +437,12 @@ example.com#@#.ad-banner       元素隐藏例外
 | 单次匹配 p99 | < 0.5 ms | **0.965 ms** | ❌ **超预算约 1.9 倍** |
 | 单次匹配 p50 | — | 0.701 ms | — |
 | 匹配吞吐 | — | 1,503 次/秒 | — |
-| release 单 ABI APK | < 15 MB | 见 `tests/perf_apk_size.txt` | — |
+| release 单 ABI APK | < 15 MB | **1.3 MB**（R8 + 资源压缩；debug 未压缩为 18 MB） | ✅ |
 | 冷启动到首帧 | < 800 ms | 需要设备，见 `tests/run_e2e.sh` 输出 | — |
 
-原始数据在 `tests/perf_results.txt`，由 `tests/perf_rule_engine.sh` 生成。
-**不把数字写进正文** —— 正文里的数字会随机器变化而失真，落文件才能核对。
+原始数据在 `tests/perf_results.txt` 与 `tests/perf_apk_size.txt`，
+由 `tests/perf_rule_engine.sh` 与 `tests/perf_apk_size.sh` 生成。
+**不把数字写进正文以外的任何地方** —— 正文里的数字会随机器变化而失真，落文件才能核对。
 
 ### 关于 p99 超预算
 

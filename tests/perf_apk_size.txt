@@ -1,0 +1,24 @@
+# Syfuse APK 体积 — 原始测量记录
+#
+# 本文件**故意入库**：它是体积预算的原始证据。README 与 CHANGELOG 引用的数字
+# 必须能在这里核对到。
+#
+# 生成方式：tests/perf_apk_size.sh
+# 每次运行会**覆盖**（体积是当前状态的快照，不是时间序列）。
+#
+# 判读注意：
+#   - release 产物在**未提供签名密钥**时是 `-unsigned`。这是有意的：
+#     没有密钥就保持未签名，而不是用 debug 密钥冒充发布产物。
+#   - debug 产物未经过 R8 与资源压缩，比 release 大一个数量级是正常的，
+#     两者对比可以看出 minify + shrinkResources 的实际收益。
+#   - 三个 ABI 体积接近，说明体积主要由代码与资源构成，而非 ABI 特有内容。
+
+=== Syfuse APK 体积 2026-10-12T22:12:45Z ===
+app-arm64-v8a-release-unsigned.apk	1345758	1.3MB
+app-armeabi-v7a-release-unsigned.apk	1343066	1.3MB
+app-x86_64-release-unsigned.apk	1344864	1.3MB
+
+# 同期 debug 产物（未 minify）作为对照，不参与预算判定：
+# app-arm64-v8a-debug.apk      17920642  18MB
+# app-armeabi-v7a-debug.apk    17917950  18MB
+# app-x86_64-debug.apk         17919748  18MB

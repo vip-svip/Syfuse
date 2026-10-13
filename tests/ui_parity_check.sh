@@ -20,24 +20,45 @@ skip() { printf '  [SKIP] %s\n' "$1"; SKIP=$((SKIP+1)); }
 info() { printf '  :: %s\n' "$1"; }
 head2(){ printf '\n== %s ==\n' "$1"; }
 
-head2 "1. 四 Tab 命名必须对齐实拍（4.1）"
-NAV="ui/src/main/kotlin/io/github/vipsvip/syfuse/ui/nav/SyfuseApp.kt"
-for tab in 首页 配置 数据 设置; do
-  if grep -q "\"$tab\"" "$NAV" 2>/dev/null; then
-    ok "Tab 存在：$tab"
-  else
-    no "Tab 缺失：$tab（4.1 要求 首页 | 配置 | 数据 | 设置）"
-  fi
+head2 "1. 布局预设必须满足 4.1 的六条硬标准"
+# 旧版这里断言的是固定的「首页/配置/数据/设置」4 Tab。
+# 新提示词 4.1 明确判定 4 Tab **不合格**（装不下功能量），改为
+# 「多布局预设 + 可自建 Tab」，默认布局 B（7 Tab）。
+# 断言必须跟着改 —— 否则检查器会用过时标准去否定正确的实现。
+LAYOUT="ui/src/main/kotlin/io/github/vipsvip/syfuse/ui/nav/LayoutPreset.kt"
+
+for preset in GEek DAILY MINIMAL; do
+  grep -q "val $preset = LayoutSpec(" "$LAYOUT" && ok "布局预设存在：$preset" || no "布局预设缺失：$preset"
 done
-# 不得新增第 5 个 Tab（7.2）
-n=$(grep -cE '^\s+[A-Z_]+\("[a-z]+", "[^\"]+", Icons\.' "$NAV" 2>/dev/null || echo 0)
-if [ "$n" -eq 4 ]; then ok "Tab 数量为 4（7.2 要求不新增第 5 个）"; else no "Tab 数量为 $n，应为 4"; fi
+grep -q "isDefault = true" "$LAYOUT" && ok "存在默认布局标记" || no "没有默认布局"
+grep -q "val default: LayoutSpec = GEek" "$LAYOUT" && ok "默认布局为 B「极客全显」（4.1 要求）" || no "默认布局不是 B"
+
+# 六条硬标准的常量必须存在
+for c in "MIN_TABS = 3" "MAX_TABS = 7" "MAX_GROUP_SHARE" "MIN_GROUP_SHARE" \
+         "MAX_SECONDARY_PAGES = 7" "TOTAL_FUNCTION_GROUPS = 34"; do
+  grep -q "$c" "$LAYOUT" && : || no "缺少 4.1 硬标准的常量：$c"
+done
+ok "六条硬标准的常量已核对"
+grep -q "fun violationsOf()" "$LAYOUT" && ok "硬标准做成了可执行断言（violationsOf）" || no "硬标准只写在注释里，没有断言"
+grep -q "ABSTRACT_WORDS" "$LAYOUT" && ok "抽象词黑名单存在（4.1 第 2 条）" || no "缺少抽象词黑名单"
+
+# 默认布局 B 的 7 个 Tab 必须都在
+for tab in 首页 代理 规则 拦截 调试 监控 设置; do
+  grep -q "label = \"$tab\"" "$LAYOUT" && ok "布局 B 含 Tab：$tab" || no "布局 B 缺少 Tab：$tab"
+done
+n=$(grep -c 'label = "' "$LAYOUT")
+info "三套预设合计定义 $n 个 Tab 标签（含重复）"
+
+# 导航必须由预设驱动，而不是写死
+NAV="ui/src/main/kotlin/io/github/vipsvip/syfuse/ui/nav/SyfuseApp.kt"
+grep -q "LayoutPresets.byId" "$NAV" && ok "导航由布局预设驱动（未写死）" || no "导航写死了 Tab 列表"
+grep -q "layout.tabs.forEach" "$NAV" && ok "Tab 由预设列表渲染" || no "Tab 未由预设渲染"
 
 head2 "2. 第 4 部分的页面是否都有屏幕文件或明确标注未实现"
 for page in 首页 Home 配置 Config 数据 Data 设置 Settings; do :; done
 SCREENS=$(ls -1 ui/src/main/kotlin/io/github/vipsvip/syfuse/ui/screen/*.kt 2>/dev/null | wc -l | tr -d ' ')
 info "屏幕文件数：$SCREENS"
-for s in HomeScreen ConfigScreen DataScreen SettingsScreen; do
+for s in HomeScreen ProxyScreen RulesScreen InterceptScreen DebugScreen MonitorScreen SettingsScreen; do
   grep -q "fun $s(" ui/src/main/kotlin/io/github/vipsvip/syfuse/ui/screen/*.kt 2>/dev/null \
     && ok "屏幕存在：$s" || no "屏幕缺失：$s"
 done

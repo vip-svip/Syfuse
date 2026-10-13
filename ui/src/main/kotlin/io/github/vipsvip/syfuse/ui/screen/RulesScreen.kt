@@ -46,7 +46,7 @@ import io.github.vipsvip.syfuse.ui.vm.RulesViewModel
  * 这满足 6.1 的 UI 要求与第 4 部分的去重裁决。
  */
 @Composable
-fun ConfigScreen(viewModel: RulesViewModel = hiltViewModel()) {
+fun RulesScreen(viewModel: RulesViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     var segment by remember { mutableIntStateOf(0) }
     val segments = listOf("分流规则", "规则集", "规则体检", "规则测试")

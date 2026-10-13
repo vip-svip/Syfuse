@@ -1,11 +1,6 @@
 package io.github.vipsvip.syfuse.ui.nav
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.InsertChart
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -15,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -27,49 +21,44 @@ import androidx.navigation.compose.rememberNavController
 import io.github.vipsvip.syfuse.data.settings.AppSettingsDataStore
 import io.github.vipsvip.syfuse.domain.settings.SettingsCatalog
 import io.github.vipsvip.syfuse.domain.settings.ThemeMode
-import io.github.vipsvip.syfuse.ui.screen.ConfigScreen
-import io.github.vipsvip.syfuse.ui.screen.DataScreen
+import io.github.vipsvip.syfuse.ui.screen.DebugScreen
 import io.github.vipsvip.syfuse.ui.screen.HomeScreen
+import io.github.vipsvip.syfuse.ui.screen.InterceptScreen
+import io.github.vipsvip.syfuse.ui.screen.MonitorScreen
+import io.github.vipsvip.syfuse.ui.screen.ProxyScreen
+import io.github.vipsvip.syfuse.ui.screen.RulesScreen
 import io.github.vipsvip.syfuse.ui.screen.SettingsScreen
 import io.github.vipsvip.syfuse.ui.theme.SyfuseTheme
 
 /**
- * 底部四个主 Tab。
- *
- * 命名与顺序严格对齐 Shadowrocket 的四段式（提示词 4.1 / 7.2）：
- * **首页 | 配置 | 数据 | 设置**。
- *
- * 为什么之前叫「节点 / 规则」是错的：那是把**内容**当成了**分区**。
- * 节点在 Shadowrocket 里属于「数据 → 服务器节点」，规则属于「配置 → 规则」。
- * 用内容名做 Tab 会让用户找不到原本熟悉的入口 —— 4.1 明确要求
- * 「命名与默认值尽量沿用，用户熟悉」。
- *
- * 提示词 7.2 还要求**不新增第 5 个 Tab**：所有超集增强项必须落在
- * 这四页的分区里，避免破坏 Shadowrocket 习惯。
- */
-enum class SyfuseTab(val route: String, val label: String, val icon: ImageVector) {
-    HOME("home", "首页", Icons.Filled.Home),
-    CONFIG("config", "配置", Icons.Filled.Tune),
-    DATA("data", "数据", Icons.Outlined.InsertChart),
-    SETTINGS("settings", "设置", Icons.Filled.Settings),
-}
-
-/**
  * 应用根组件。
  *
- * 主题与语言由设置驱动。注意：主界面完全由 Compose 构建，**没有任何 WebView 节点**——
- * 这是 R1 的判定方式（检索 WebView / loadUrl，主 Activity 树无 WebView 节点）。
+ * **导航由布局预设驱动**（提示词 4.1）。默认布局 B「极客全显」7 Tab：
+ * 首页 / 代理 / 规则 / 拦截 / 调试 / 监控 / 设置。
+ *
+ * 为什么不是固定的 4 Tab：4.1 复盘指出，把「功能域」直接当 Tab 会导致
+ * 单 Tab 超载（原「配置」要装分流+过滤+模块+脚本四种东西）。
+ * 正确做法是按用户任务切分，**且布局本身可换**——所以 Tab 列表来自
+ * [LayoutPresets] 而不是写死在这里。
+ *
+ * 主界面完全由 Compose 构建，**没有任何 WebView 节点** —— 这是 R1 的判定方式。
  */
 @Composable
 fun SyfuseApp(
     settingsStore: AppSettingsDataStore,
+    layoutId: String? = null,
 ) {
     val settings by settingsStore.settings.collectAsState(initial = null)
 
     val themeMode = settings?.get(SettingsCatalog.byKey("theme")?.key ?: "theme")
         ?.let { runCatching { ThemeMode.valueOf(it.uppercase()) }.getOrNull() }
         ?: ThemeMode.SYSTEM
-    val dynamicColor = settings?.getBoolean("dynamic_color") ?: true
+    val dynamicColor = settings?.getBoolean("dynamic_color") ?: false
+
+    // 布局由设置驱动；未设置时用 4.1 规定的默认（布局 B，7 Tab）
+    val layout = LayoutPresets.byId(
+        layoutId ?: settings?.get("layout_preset"),
+    )
 
     SyfuseTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
         val navController = rememberNavController()
@@ -79,12 +68,12 @@ fun SyfuseApp(
         Scaffold(
             bottomBar = {
                 NavigationBar {
-                    SyfuseTab.entries.forEach { tab ->
-                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                    layout.tabs.forEach { tab ->
+                        val selected = currentDestination?.hierarchy?.any { it.route == tab.id } == true
                         NavigationBarItem(
                             selected = selected,
                             onClick = {
-                                navController.navigate(tab.route) {
+                                navController.navigate(tab.id) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
                                     }
@@ -107,13 +96,17 @@ fun SyfuseApp(
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = SyfuseTab.HOME.route,
+                startDestination = layout.tabs.first().id,
                 modifier = Modifier.padding(innerPadding),
             ) {
-                composable(SyfuseTab.HOME.route) { HomeScreen() }
-                composable(SyfuseTab.CONFIG.route) { ConfigScreen() }
-                composable(SyfuseTab.DATA.route) { DataScreen() }
-                composable(SyfuseTab.SETTINGS.route) { SettingsScreen() }
+                composable("home") { HomeScreen() }
+                composable("proxy") { ProxyScreen() }
+                composable("rules") { RulesScreen() }
+                composable("block") { InterceptScreen() }
+                composable("debug") { DebugScreen() }
+                composable("monitor") { MonitorScreen() }
+                composable("console") { MonitorScreen() }
+                composable("settings") { SettingsScreen() }
             }
         }
     }

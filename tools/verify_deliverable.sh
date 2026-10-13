@@ -84,22 +84,40 @@ fi
 # ---------- 3. 占位符 / 未完成标记 ----------
 head2 "3. 占位符与未完成标记"
 PH_PATTERN='TODO|FIXME|<your-name>|待补写|\[略\]|（略）|\.\.\.$|XXX'
-PH=$(grep -nE "$PH_PATTERN" "$FILE" || true)
+META='❌|禁止|不许|不要|除外|占位符|核对|扫描|校验|检测'
+# 围栏按长度配对：``` 开的块只能被 ``` 关，```` 开的块要被 ```` 关。
+# 否则脚本源码里出现的 ``` 会翻转状态，使代码块内的 TODO 被误判为文档缺陷。
+# 模式必须用 ENVIRON 传入：awk 的 -v 会处理转义序列，会把 \. 变成 .，
+# 使 \.\.\.$ 退化成「任意三字符结尾」（= 匹配几乎每一行）。ENVIRON 不做转义处理。
+PH=$(PH_PATTERN="$PH_PATTERN" META="$META" awk '
+  BEGIN {
+    pat = ENVIRON["PH_PATTERN"]; meta = ENVIRON["META"]
+    fence = 0; flen = 0; inblock = 0
+  }
+  {
+    if (match($0, /^`{3,}/)) {
+      ticks = RLENGTH
+      if (fence == 0) { fence = 1; flen = ticks } else if (ticks >= flen) { fence = 0; flen = 0 }
+      next
+    }
+    if ($0 !~ pat) next
+    if (fence == 1) { inblock++; next }
+    line = $0
+    gsub(/`[^`]*`/, "", line)
+    if (line ~ pat && $0 !~ meta) print "FAIL\t" NR "\t" $0
+    else print "WARN\t" NR "\t" $0
+  }
+  END { if (inblock > 0) print "BLOCK\t" inblock "\t" }
+' "$FILE")
 if [ -z "$PH" ]; then
-  c_ok "无占位符 / 未完成标记"
+  c_ok "正文无占位符 / 未完成标记"
 else
-  while IFS= read -r hit; do
-    num="${hit%%:*}"
-    body="${hit#*:}"
-    # 双条件才算违规：① 剥掉行内 `代码段` 后正文仍命中；② 整行不含"在讲规则"的元标记。
-    # 这样避免两种误判：把"禁止 TODO"当成残留、把真残留当成规则说明。
-    # 已知局限：真残留恰好写在含元标记的行里会被 WARN 放过——所以 WARN 也要人眼扫一遍。
-    meta='❌|禁止|不许|不要|除外|占位符|核对|扫描|校验|检测'
-    if printf '%s' "$body" | strip_code | grep -qE "$PH_PATTERN" && ! printf '%s' "$body" | grep -qE "$meta"; then
-      c_bad "L${num} 正文残留占位符：$(printf '%s' "$body" | clip 60)"
-    else
-      c_warn "L${num} 命中位于代码段/规则说明，忽略：$(printf '%s' "$body" | clip 60)"
-    fi
+  while IFS=$'\t' read -r kind a b; do
+    case "$kind" in
+      FAIL)  c_bad  "L${a} 正文残留占位符：$(printf '%s' "$b" | clip 60)" ;;
+      WARN)  c_warn "L${a} 命中位于行内代码/规则说明，忽略：$(printf '%s' "$b" | clip 60)" ;;
+      BLOCK) c_warn "代码块内含占位符类字样 ${a} 处（示例/源码，已跳过不计失败）" ;;
+    esac
   done < <(printf '%s\n' "$PH")
 fi
 
@@ -134,7 +152,7 @@ REQS='1 SY-Fusion 作为参考基线|SY-Fusion
 17 节点与 IP 防泄漏|IP 防泄漏
 18 AdGuard Home 功能并入|AdGuard Home
 19 uBlock Origin Lite 功能并入|uBlock Origin Lite
-20 SY-Fusion 模块功能全量并入|SY-Fusion 模块功能全量并入
+20 SY/SY-Fusion 功能全量并入并有逐项映射|逐项复现映射
 21 新流行配色|OKLCH
 22 透明玻璃（受控）|透明玻璃规范
 23 App 内浏览器面板开关|启用浏览器面板
@@ -144,7 +162,13 @@ REQS='1 SY-Fusion 作为参考基线|SY-Fusion
 27 交付前必须跑校验门禁|verify_deliverable
 28 玻璃性能预算|P90 ≤ 24ms
 29 模块 action.sh 菜单|action.sh
-30 Hook 内置能力|证书固定绕过'
+30 Hook 内置能力|证书固定绕过
+31 多布局预设 + 可自建 Tab|布局预设
+32 SY/SY-Fusion 可复现规格|复现规格
+33 主流主题预设方案|主流主题预设
+34 自定义主题方案（逐角色编辑/取色/分区覆盖/主题包）|自定义主题方案
+35 默认 7 Tab 布局|默认使用布局 B
+36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**'
 
 TOTAL=0
 MISS=0
@@ -166,6 +190,7 @@ printf '  需求项 %s 条，缺失 %s 条\n' "$TOTAL" "$MISS"
 head2 "6. 脚本编码规范"
 SCAN_DIR=$(dirname "$FILE")
 FOUND=0
+PRUNE='-path */.git/* -o -path */build/* -o -path */node_modules/* -o -path */downloads/* -o -path */screenshots/* -o -path */logs/* -o -path */dist/* -o -path */.gradle/*'
 while IFS= read -r s; do
   [ -z "$s" ] && continue
   FOUND=$((FOUND+1))
@@ -178,7 +203,15 @@ while IFS= read -r s; do
     if [ "$hasext_sh" -eq 1 ]; then c_ok "$(basename "$s") 无 BOM（shebang 正确）"
     else c_bad "$(basename "$s") 缺少 UTF-8 BOM：Windows PowerShell 5.1 会按 ANSI 解码中文并报语法错误"; fi
   fi
-done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) 2>/dev/null)
+  # 换行符：.sh 混入 CRLF 会让 bash 报 "\r: command not found"（Windows 上极易发生）
+  if [ "$hasext_sh" -eq 1 ]; then
+    if grep -qU $'\r' "$s" 2>/dev/null; then
+      c_bad "$(basename "$s") 含 CRLF 换行，bash 会报 '\r: command not found'，必须转成 LF"
+    else
+      c_ok "$(basename "$s") 换行为 LF（正确）"
+    fi
+  fi
+done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null)
 [ "$FOUND" -eq 0 ] && c_warn "未找到 .ps1/.sh 可检查（跳过）"
 
 # ---------- 汇总 ----------

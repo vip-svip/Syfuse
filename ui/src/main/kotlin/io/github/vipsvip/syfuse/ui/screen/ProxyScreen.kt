@@ -40,7 +40,7 @@ import io.github.vipsvip.syfuse.ui.vm.NodesViewModel
  * 延迟用颜色 + 数值双重编码，不单靠颜色（7.4）。
  */
 @Composable
-fun DataScreen(viewModel: NodesViewModel = hiltViewModel()) {
+fun ProxyScreen(viewModel: NodesViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
 
     Column(Modifier.fillMaxSize()) {

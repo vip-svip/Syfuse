@@ -1,512 +1,590 @@
 # Syfuse · 融合代理
 
-原生 Android 代理客户端。主干对齐 iOS Shadowrocket 的功能与界面结构，
-差异层只做 Shadowrocket **没有**的能力：内容过滤引擎、开屏广告跳过、
-通知清理、网络层拦截、root/LSPosed 特权层、配置即产品。
+> **一个 KernelSU / Magisk / APatch 模块**，模块内**内置 APK**。模块提供系统级能力
+> （透明代理 · DNS · MITM · 过滤 · 封禁 · Hook · 证书与 hosts 注入），
+> App 提供全部界面与配置。两者各自可独立工作，合起来是一个
+> **只能比 Shadowrocket 多、不能少**的客户端。
 
-本仓库处于 **M1（骨架）阶段**。请先读「当前完成度」一节，
-它如实列出哪些能力已可运行、哪些尚未交付。
+[![CI](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-M1%20模块骨架-orange.svg)](#功能可用性报告)
+
+> ⚠️ **当前状态：M1（模块骨架）。代理内核未接入，代理上网不可用。**
+> 逐项状态见[功能可用性报告](#功能可用性报告)。本文档不夸大任何能力。
 
 ---
 
 ## 目录
 
-- [当前完成度](#当前完成度)
-- [构建环境](#构建环境)
-- [构建与验证](#构建与验证)
-- [仓库结构](#仓库结构)
-- [Shadowrocket 功能覆盖表](#shadowrocket-功能覆盖表)
-- [账号 → 包名映射](#账号--包名映射)
-- [安装](#安装)
-- [权限](#权限)
-- [规则语法](#规则语法)
-- [脚本 API](#脚本-api)
-- [本地 API](#本地-api)
-- [性能预算与实测](#性能预算与实测)
-- [安全模型与红线](#安全模型与红线)
+- [定位与产品形态](#定位与产品形态)
+- [功能可用性报告](#功能可用性报告)
+- [功能覆盖度对照表](#功能覆盖度对照表)
+- [逐屏界面清单](#逐屏界面清单)
+- [架构](#架构)
+- [数据模型](#数据模型)
+- [syfuse.conf 键表](#syfuseconf-键表)
+- [规则语法全表](#规则语法全表)
+- [API 与 CLI](#api-与-cli)
+- [构建与自检](#构建与自检)
+- [权限说明](#权限说明)
+- [风险清单](#风险清单)
+- [【待核实】项](#待核实项)
+- [常见问题](#常见问题)
 - [免责声明](#免责声明)
 - [致谢与许可](#致谢与许可)
 
 ---
 
-## 当前完成度
+## 定位与产品形态
 
-**已可运行且已验证**（有原始命令输出为证，见 [构建与验证](#构建与验证)）：
+```
+┌──────────────── 模块层（systemless，交付主体）────────────────┐
+│ KernelSU / Magisk / APatch 刷入；OverlayFS + bind mount        │
+│ 守护进程 syfused · 代理内核宿主 · DNS 服务 · MITM 引擎         │
+│ 过滤引擎 · Hook 框架 · 证书注入 · hosts 注入 · 网络封禁         │
+│ 脚本引擎 · 本地控制 API(UDS) · 日志与统计                       │
+│ 内含 sidecar APK：apk/syfuse.apk                               │
+└───────────────────────────────────────────────────────────────┘
+                    ↑↓ UDS + token（编码见下方说明）
+┌──────────────── App 层（内置软件 / 控制台助手）───────────────┐
+│ Compose UI · 首页/配置/数据/设置 · 模块与脚本管理              │
+│ MITM 抓包查看 · Hook 管理 · 防泄漏自检 · 统计图表 · 诊断        │
+└───────────────────────────────────────────────────────────────┘
+```
 
-| 能力 | 位置 | 状态 |
+**互相增强**：
+
+- 模块给 App：免 VPN 弹窗的透明代理、系统 CA 注入、hosts 注入、UID 级分流、Hook 能力、开机自启、无 SELinux 干扰
+- App 给模块：全部配置界面、订阅与节点管理、模块/脚本/MITM/Hook 编辑、抓包可视化、统计图表、自检与一键修复、模块自身的安装与更新
+- **模块可独立工作**：`action.sh` 11 项音量键菜单 + CLI + 可选局域网面板
+- **App 可独立工作**：无 root 时用 `VpnService` 模式，功能不缺失、仅能力降级（无系统证书、无 UID 精确分流、无 Hook）
+
+---
+
+## 功能可用性报告
+
+**这是本文档最重要的一节。** 状态只有三种：
+
+- `可用` = 有端到端证据（命令输出 / 截图 / 抓包）
+- `实验性` = 能构建能运行但未端到端验证；UI 上必须显著标记
+- `不可用` = 未实现；入口禁用并写明原因与计划里程碑
+
+**当前里程碑：M1（模块骨架）。没有任何功能达到 `可用`** —— 因为真机验证未执行（本机无 Android 设备）。
+
+| 功能 | 状态 | 证据 / 原因 | 计划 |
+|---|---|---|---|
+| 模块安装（沙箱模拟） | 实验性 | `tests/run_restore_check.sh` PASS=17（沙箱内真实执行 customize.sh） | 真机验证 |
+| 模块卸载与完全还原 | 实验性 | 同上；沙箱内安装→卸载→diff 无残留 | 真机验证 |
+| 还原清单机制 | **可用** | 84 个 Go 用例 + 沙箱端到端；`manifest.Add()` 拒绝不可还原条目 | — |
+| `action.sh` 11 项菜单 | 实验性 | 菜单结构与 11 个处理函数已断言；4 项接真实功能，7 项明确报未实现 | 随各里程碑接通 |
+| `syfused` 守护进程 | 实验性 | 源码可编译、84 用例通过；**二进制未随包** | M3 |
+| UDS 控制通道 | 实验性 | 协议与鉴权有测试；Windows 上跳过 UDS 断言，**未在 Linux/真机验证** | M3 + 跑通 CI |
+| 规则引擎（Kotlin，离线） | 实验性 | 28 用例 + 38 条语料期望全绿；未接入数据面 | M5/M10 |
+| 配置编解码 / 设置目录 | 实验性 | JVM 单测通过 | M2 |
+| Compose 界面 | 实验性 | 可构建可启动；**视觉未按 4.11 重做，Tab 命名仍是旧的** | M2 |
+| **代理上网** | **不可用** | 内核未接入；`Engine.Start()` 返回 `ErrTunnelNotImplemented` | M3 |
+| 分流 / 规则生效 | **不可用** | 规则引擎未接数据面 | M5 |
+| DNS（DoH/DoT/DoQ、fake-ip） | **不可用** | 未实现 | M6 |
+| 模块系统 / 脚本系统 | **不可用** | 未实现 | M7 |
+| MITM / 抓包 | **不可用** | 未实现 | M8 |
+| 统计 / 连接列表 | **不可用** | 未实现 | M9 |
+| 过滤拦截生效 | **不可用** | 未实现 | M10 |
+| Hook / 系统证书 / hosts 注入 | **不可用** | 未实现 | M11 |
+| 防泄漏自检与修复 | **不可用** | 未实现 | M12 |
+| 开屏跳过 / 通知净化 / 网络封禁 | **不可用** | 未实现 | M13 |
+| 浏览器面板 | **不可用** | 未实现 | M13 |
+| 局域网投送 | **不可用** | 未实现 | M9 |
+
+**死 UI 声明**：当前 App 界面上**没有任何**看起来可用但实际未接通的功能开关 ——
+因为界面仍是最小骨架，尚未接入上述任何能力。M2 做界面时必须保持这一点。
+
+---
+
+## 功能覆盖度对照表
+
+三态：`复刻`（与 Shadowrocket 功能对齐）/ `超集增强`（Shadowrocket 没有）/ `不做`（附技术理由）。
+
+### 5.1 代理与节点
+
+| 项 | 状态 | 说明 |
 |---|---|---|
-| 过滤规则解析（hosts / dnsmasq / ABP 三类语法） | `core/rule` | 已实现，corpus 38 条期望全绿 |
-| 优先级匹配模型（重要放行 > 重要拦截 > 普通放行 > 普通拦截 > 未命中） | `core/rule/FilterEngine.kt` | 已实现，非短路、取最高秩 |
-| 域名后缀 Trie（标签级，防 `notexample.com` 误命中 `example.com`） | `core/rule/DomainTrie.kt` | 已实现 |
-| IPv4 CIDR 二叉 Trie（最长前缀匹配） | `core/rule/Ipv4CidrTrie.kt` | 已实现 |
-| `$badfilter` 编译期消解、签名重建防正则 `$` 误拆 | `core/rule/FilterEngine.kt` | 已实现 |
-| 设置目录（11 组，含风险标注/专家模式/搜索/恢复推荐值） | `domain/settings` | 已实现 |
-| 配置编解码（未知字段保留、拒绝高版本 schema） | `domain/config` | 已实现 |
-| 引擎状态机 + 流量计量（EMA，含计数器回退检测） | `domain/engine` | 已实现 |
-| 凭据保险库（Android Keystore AES-256-GCM） | `data/security` | 已实现 |
-| Room 持久化 + schema 导出 | `data/db` | 已实现 |
-| Compose 四 Tab 骨架 + 四主题（含 AMOLED 纯黑） | `ui` | 已实现 |
-| 特权层命令白名单（sealed enum，禁止拼字符串） | `privileged` | 已实现 |
-| LSPosed 桥接契约（HookSpec / HookStats / 受保护注册） | `lsposed-bridge` | 已实现 |
-| KernelSU/Magisk 模块骨架 + 卸载还原 | `module/` | 已实现 |
-| 订阅 URI 解析（8 种协议，Go 实现） | `kernel/src/node.go` | 已实现，55 个 Go 用例全绿 |
-| 内核配置校验（schema 版本拒绝、FakeIP 前置条件） | `kernel/src/config.go` | 已实现，20 个 Go 用例 |
-| 内核凭据隔离（白名单投影，UI 用的 JSON 不含密码） | `kernel/src/node.go` | 已实现，泄漏专项用例 |
+| 协议：SS / SSR / VMess / VLESS / Trojan / Hysteria / Hysteria2 / HTTP(S) / SOCKS5 | 复刻 | URI 解析已实现并测试（`src/syfuse/node.go`，8 种协议）；**代理本身未实现** |
+| 协议：TUIC v5 / WireGuard / Snell v3-v4 / SSH / AnyTLS / ShadowTLS / Juicity / Mieru | 复刻 | 计划 M4；随 sing-box 内核获得 |
+| Trojan-Go、插件 obfs / v2ray-plugin | 复刻 | 计划 M4 |
+| 传输：TCP / WS / HTTP-Upgrade / gRPC / HTTP2 / QUIC / mKCP / HTTP-Obfs | 复刻 | 计划 M4；随内核 |
+| TLS 全参数（SNI/ALPN/uTLS 指纹/skip-cert-verify/证书固定/ECH） | 复刻 | 计划 M4 |
+| 节点 CRUD / 分组 / 备注 / 排序 / 置顶 / 收藏 / 批量 | 复刻 | 计划 M4 |
+| 导入导出 / 分享链接 / 二维码 / 剪贴板识别 | 复刻 | URI 解析已就绪；二维码计划 M4 |
+| Clash YAML / sing-box JSON 互转 | 复刻 | 计划 M4 |
+| 订阅：URL / 二维码 / 剪贴板 / 文件；覆盖现有 / 自动重命名 / 定时更新 / 差异预览 / 流量与到期解析 / 失败保留旧配置 | 复刻 | 计划 M4 |
+| 测速：TCP / TLS / HTTP HEAD / ICMP，并发与分批，结果着色 | 复刻 | 计划 M4 |
+| 策略组：select / url-test / fallback / load-balance / relay，嵌套与健康检查 | 复刻 | 计划 M4 |
 
-**尚未交付**（不在本版本内，代码中亦不假装可用）：
+### 5.2 分流与规则
 
-| 能力 | 现状 |
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 规则类型：DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD / DOMAIN-REGEX / IP-CIDR / IP-CIDR6 / IP-ASN / GEOIP / GEOSITE / SRC-IP / SRC-PORT / DST-PORT / PROCESS-NAME / PACKAGE-NAME / UID / NETWORK / PROTOCOL / DSCP / RULE-SET / MATCH | 复刻 | 计划 M5；域名与 CIDR 两类已在过滤引擎实现（`core:rule`） |
+| AND / OR / NOT / SUB-RULE / FALLBACK / `no-resolve` | 复刻 | 计划 M5 |
+| 规则集：本地 + 远程 URL、定时更新、哈希校验、离线 GEOIP/GEOSITE、镜像加速 | 复刻 | 计划 M5 |
+| 规则体检（语法错误到行号、冲突、永不命中、重复） | 复刻 | 语法错误定位**已实现**（`RuleDiagnostic` 带行号） |
+| 测试规则（命中规则、经过的组、最终动作、完整链路） | 复刻 | 引擎侧已支持 `collectChain`；UI 规则测试页已实现 |
+
+### 5.3–5.7 模块 / 脚本 / MITM / 重写 / Hook
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 模块系统（同配置语法 + `#!name` `#!desc` 元数据、分段开关、订阅更新、冲突检测） | 复刻 | 计划 M7 |
+| 脚本系统（QuickJS、沙箱、HTTP/规则/cron/DNS、兼容 SR/Surge/QX/Loon API） | 复刻 | 计划 M7 |
+| MITM（CA 生成/轮换/安装/还原、主机列表、按应用、入站代理） | 复刻 | 计划 M8 |
+| **抓包查看器**（请求响应列表、HAR/JSON 导出、时间线） | **超集增强** | 计划 M8；Shadowrocket 无独立抓包查看器 |
+| 重写系统（URL / 头部 / 正文 / 本地映射） | 复刻 | 计划 M8 |
+| Hook 框架检测与引擎切换（Zygisk / LSPosed / APatch / LD_PRELOAD / ptrace） | **超集增强** | 计划 M11；契约层已建（`hook/`） |
+| 内置 Hook（pinning 绕过、用户 CA 信任注入、网络栈 Hook、DNS Hook、代理重定向、WebRTC 阻断） | **超集增强** | 计划 M11 |
+| 自定义 Hook 脚本（暴露 Hook 点给 JS） | **超集增强** | 计划 M11 |
+| 环境伪装（对指定 App 隐藏 root/VPN 状态） | **超集增强** | 计划 M11；**默认关**，需明确告知风险 |
+
+### 5.8–5.11 防泄漏 / 统计 / 隧道 / 系统集成
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| DNS / IPv6 / WebRTC / QUIC 泄漏检测与防护 | **超集增强** | 计划 M12 |
+| 真实 IP 回显检测（多端点比对出口 IP 与节点地区） | **超集增强** | 计划 M12 |
+| 分流泄漏检测（本机/局域网 IP、网关、运营商 DNS 直连） | **超集增强** | 计划 M12 |
+| 一键自检 + 一键修复 + 前后对比 + 报告导出 + 定时巡检 | **超集增强** | 计划 M12 |
+| 日志（自动删除 / 代理 / DNS） | 复刻 | 计划 M9；守护侧日志轮转**已实现**（`internal/logx`） |
+| 服务器节点（覆盖现有 / 自动重命名 / 导入 / 导出 / 删除所有） | 复刻 | 计划 M9 |
+| 统计（速率曲线、按 App/域名/规则/组/节点排行、导出 CSV/JSON） | 复刻 | 计划 M9 |
+| **连接列表**（源 App、目标、命中规则、链路、上下行、时长、单条断开） | **超集增强** | 计划 M9 |
+| **拦截日志**（按规则来源/类型筛选） | **超集增强** | 计划 M10 |
+| 局域网投送（对应 Apple TV 小节语义） | 复刻（替代） | 计划 M9。原功能依赖 Apple 生态，改为向同网段浏览器推送 |
+| 隧道参数（MTU / stack / auto-route / strict-route / TUN 实现） | 复刻 | 计划 M3/M6 |
+| 代理参数（拥塞算法 / TFO / Mux / UDP 中继 / 缓冲区） | 复刻 | 计划 M3 |
+| 按需求连接（SSID / 网络类型 / 时间 / 前台 App） | 复刻 | 计划 M13 |
+| 权限与集成（位置 / 通知 / 剪贴板 / 无障碍 / 小组件 / 捷径 / 磁贴 / 触感 / 语言 / 外观） | 复刻 | 计划 M2（外观）/ M13（其余） |
+| **浏览器面板**（App 内一键开关 + 系统浏览器打开 + 二维码 + 功能范围勾选） | 复刻 | 计划 M13；**禁止 WebView 内嵌** |
+| 小组件（连接开关/速率/节点/延迟，多尺寸） | 复刻 | 计划 M13 |
+| 捷径 / URL Scheme `syfusion://` | 复刻 | 计划 M13 |
+
+### 明确不做（附技术理由）
+
+| 项 | 理由 |
 |---|---|
-| **代理内核数据面**（TCP/UDP 转发、TLS 握手、协议编解码） | **未实现**。`Engine.Start()` 做完配置校验与节点解析后**如实返回** `ErrTunnelNotImplemented`，不返回 nil 假装成功。有专门测试守着这条行为 |
-| VpnService 隧道 | 未实现。Manifest 未声明 `BIND_VPN_SERVICE`，因为声明了却没有实现属于虚假能力声明 |
-| 内核 AAR 构建 | `kernel/tools/build_aar.sh` 已就绪，但需要 gomobile + NDK，本次未执行。因此 `engine` 仍绑定 `NotLinkedDataPlane` |
-| 域名嗅探 / DNS 分流 / 透明代理 | 未实现（内核侧只有配置字段） |
-| 广告过滤在数据面的实际生效 | **未生效**。规则引擎可离线运行与测试，但没有任何数据面在调用它。UI 规则页的"规则测试"是真实运行引擎的 |
-| 开屏广告跳过 / 通知清理 | 未实现 |
-| LSPosed 具体 Hook 逻辑 | 未实现。只有契约与注册保护 |
-| 规则引擎线性路径索引化 | 未做。实测 p99 = 0.965 ms，**超出 0.5 ms 预算**（见「性能预算与实测」） |
-| 界面文案本地化 | 117 处用户可见文案内联在 Compose / ViewModel 中，尚未抽取到 `strings.xml` |
-| 远端发布（GitHub Release / 模块仓库） | **未执行**。见 [待执行的一步](#待执行的一步) |
-
-> 之所以把这些明确列出来：本工程的第一条纪律是「不编造」。
-> 一个把未完成能力说成已完成的项目，比一个明确说"还没做"的项目危险得多。
+| 复刻 Shadowrocket 的视觉资产（图标、字体、截图、本地化文案） | 15.4 明令禁止提取商业 App 受版权资产。**复刻的是信息架构与行为语义，不是视觉搬运** |
+| WebView / H5 承载主界面与编辑器 | 15.1。原生 Compose 是硬要求；**仅可选局域网面板例外且默认关闭** |
+| 运行时下载内核二进制并执行 | 15.2。内核静态随包；仅允许带 SHA-256 校验的可选更新 |
+| 从零手写加密协议栈或自创算法 | 15.5。用成熟实现（sing-box / 标准库） |
+| 整页背景实时模糊 / 原始分辨率实时模糊 / 动态噪点冒充玻璃 | 15.3 + 7.5。参考项目实测：全屏模糊把 P50 帧耗时从 19ms 拉到 150ms、丢帧率 3.68%→100% |
+| 默认开启遥测 / 崩溃上报 | 15.6 |
+| `保存到 iCloud` | 平台不可用；等价实现为「保存到本地 / 云备份」（语义等价） |
+| `Apple TV` 投送 | 依赖 Apple 生态；等价实现为「局域网投送」 |
 
 ---
 
-## 构建环境
+## 逐屏界面清单
 
-本项目不假设你的机器上已经装好 Android 工具链。全部依赖可落到一个隔离目录里：
+**实拍图说明**：提示词 4 部分引用 8 张 Shadowrocket 实拍作为**功能与内容参考**。
+这 8 张图**不在本次执行提供的上下文中**，我不能凭空生成、也不能去抓取商业 App 截图
+（15.4）。因此 `screenshots/` 目录为空并附说明；
+`tests/ui_screenshot.sh` 目前只产出本应用自己的截图，**不做实拍比对**。
+把 8 张图放进 `screenshots/` 后比对会自动启用。
 
-| 组件 | 版本 | 获取方式 |
+**允许重新设计**：提示词 4 部分明确"实拍仅供参考，可重新设计"——
+功能必须对齐，信息架构与视觉可以换新，视觉走 4.11 设计系统。
+
+| # | 页面 | 实拍参考 | 落点 | 状态 |
+|---|---|---|---|---|
+| 1 | 首页 | sr-01 | Tab 1 | 实验性（骨架已建，视觉未重做） |
+| 2 | 全局路由 | sr-02 | 首页 → 全局路由 | 未实现（M2） |
+| 3 | 配置列表 | sr-04 | Tab 2 | 未实现（M2） |
+| 4 | 配置详情（10 分区计数） | sr-05 | 配置 → 详情 | 未实现（M2） |
+| 5 | 模块 | sr-03 | 配置 → 模块 | 未实现（M7） |
+| 6 | 数据 | sr-06 | Tab 3 | 未实现（M2） |
+| 7 | 设置（一） | sr-07 | Tab 4 | 实验性（骨架已建） |
+| 8 | 设置（二） | sr-08 | Tab 4 | 未实现（M2） |
+| 9 | 节点编辑（协议/TLS/传输/插件全参数） | 未拍到 | 节点 → 编辑 | 未实现（M4） |
+| 10 | 策略组编辑 | 未拍到 | 节点 → 策略组 | 未实现（M4） |
+| 11 | 规则编辑 / 规则体检 / 测试规则 | 未拍到 | 配置 → 规则 | 未实现（M5） |
+| 12 | Hosts 编辑 | 未拍到 | 配置 → Hosts | 未实现（M5） |
+| 13 | URL / 头部 / 正文重写编辑 | 未拍到 | 配置 → 重写 | 未实现（M8） |
+| 14 | 本地映射编辑 | 未拍到 | 配置 → 本地映射 | 未实现（M8） |
+| 15 | HTTPS 解密（主机列表 + 证书管理） | 未拍到 | 配置 → HTTPS 解密 | 未实现（M8） |
+| 16 | 脚本编辑 / 脚本规则 / 调试控制台 | 未拍到 | 配置 → 脚本 | 未实现（M7） |
+| 17 | 代理分组编辑 | 未拍到 | 配置 → 代理分组 | 未实现（M4） |
+| 18 | 规则集 URL 管理 / 脚本 URL 管理 | 未拍到 | 配置 → 详情 → 第二卡片 | 未实现（M5/M7） |
+| 19 | 日志 → 代理 / 日志 → DNS | 未拍到 | 数据 → 日志 | 未实现（M9） |
+| 20 | 统计详情 | 未拍到 | 数据 → 统计 | 未实现（M9） |
+| 21 | 连接列表 / 拦截日志 / Hook 命中日志 | 超集新增 | 数据 → 连接/拦截/Hook | 未实现（M9/M10/M11） |
+| 22 | 诊断 / 外观 / 隧道 / 代理 / TCP / UDP / 按需求连接 | 未拍到 | 设置 → 高级/隧道 | 未实现（M2/M13） |
+| 23 | 捷径 / 小组件 / 场景 / 分组 | 未拍到 | 设置 | 未实现（M13） |
+| 24 | 配置 → 通用（那 8 项） | 未拍到 | 配置 → 详情 → 通用 | 未实现（M5） |
+| 25 | 关于 / 更多 | 未拍到 | 设置 | 未实现（M2） |
+| 26 | **浏览器面板** | 超集新增 | 设置 → 浏览器面板 | 未实现（M13） |
+| 27 | 模块与特权 / 广告与过滤 / 隐私与防泄漏 / 脚本与 Hook / 备份与还原 | 超集新增 | 设置新增小节 | 未实现（M11/M10/M12/M7/M13） |
+
+---
+
+## 架构
+
+### 三层进程模型
+
+```
+┌─ App 进程 ─┐   Compose UI · ViewModel · Room/DataStore · 无 root 时内嵌内核
+│            │   ↕ UDS + token
+├─ 守护进程 ─┤   syfused（Go）：内核宿主 · DNS · MITM · 过滤 · 封禁 · 开屏
+│  (root)    │   ↕ nftables/TPROXY · /dev/tun · 证书 · hosts · Hook 装载
+├─ Hook 层 ──┤   Zygisk / LSPosed 模块 + 自定义 Hook 脚本
+└────────────┘
+```
+
+### 数据通路
+
+| 模式 | 通路 |
+|---|---|
+| 无 root | `VpnService` + TUN（gvisor/system/mixed）+ `addDisallowedApplication` |
+| 有 root | `nftables` TPROXY + `ip rule fwmark` + UID 精确分流；TUN 与 TPROXY 双通路择优 |
+
+### 内核选型与许可核实（**实证，非采信**）
+
+| 候选 | 实测结果 | 结论 |
 |---|---|---|
-| JDK | Temurin 21.0.12.1+1 | `https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse` |
-| Gradle | 8.11.1 | `https://services.gradle.org/distributions/gradle-8.11.1-bin.zip` |
-| Android SDK | platform 35 + build-tools 35.0.0 + platform-tools | `https://dl.google.com/android/repository/commandlinetools-win-*.zip` 后接 `sdkmanager` |
-| Go（仅构建内核时需要） | 1.23.4 | `https://dl.google.com/go/go1.23.4.windows-amd64.zip` |
+| **sing-box**（`SagerNet/sing-box`） | LICENSE 原文：*"GNU General Public License … either version 3 of the License, or (at your option) any later version"* → **GPL-3.0-or-later**。Go 5.63MB，★38.8k。**默认分支是 `testing`，不是 `main`** | ✅ **选它**。协议最全，许可与要求一致 |
+| mihomo（`MetaCubeX/mihomo`） | **不是代理内核**。该仓库今天是 *"A simple Python Pydantic model for Honkai: Star Rail parsed data from the Mihomo API"*，MIT，仅 7 个根条目 | ❌ **提示词 9.2/18.3 的引用有误**，见下 |
 
-`tests/env.sh` 会按以下顺序自动定位它们，**无需手工配置**：
+> **提示词勘误（按 2.3 提出）**
+>
+> 提示词 9.2 写「mihomo（规则生态成熟）」、18.3 写「mihomo（GPL-3.0）」。
+> 实测：`MetaCubeX/mihomo` 当前是崩坏星穹铁道的**游戏数据解析器**（MIT，Python），
+> 与代理内核无关。提示词给的仓库指向已经不对了。
+>
+> **修正建议**：把 9.2 与 18.3 的 mihomo 引用改为
+> 「mihomo（Clash.Meta 系代理内核，仓库地址需以实际为准）」，
+> 或直接删掉该候选 —— 本项目选 sing-box 已足够覆盖协议需求。
+>
+> **许可推导结论不变**：sing-box 是 GPL-3.0-or-later → 本项目**必须** GPL-3.0-or-later。
+> 不会因为"MIT 更流行"改成 MIT（18.3）。
 
-1. 显式环境变量（`JAVA_HOME` / `ANDROID_HOME` / `SYFUSE_GRADLE`）
-2. `$SYFUSE_TOOLCHAIN`（默认 `$HOME/.workbuddy-ai/toolchain`）
-3. 系统 PATH
+### 通信协议的一处偏离（已登记）
 
-定位失败时脚本 `exit 2` 并把缺什么打到 stderr —— 不会静默降级成"通过"。
+提示词 3.4 写「UDS + **protobuf** + token」。当前实现用**换行分隔 JSON**：
 
-### 为什么固定这些版本
-
-- **Gradle 8.11.1 + AGP 8.7.3**：这是 AGP 8.7 支持的 Gradle 下限组合，再高会引入未验证的
-  Kotlin/Compose 编译器组合。
-- **Kotlin 2.1.0 + KSP 2.1.0-1.0.29**：KSP 版本必须与 Kotlin 版本严格配对，否则 Hilt 处理器
-  会静默不生成代码，表现为运行时 `ClassNotFoundException` 而非编译错误。
-- **compileSdk 35 / minSdk 26**：26 是 `VpnService` 的 `setUnderlyingNetworks` 与
-  `NetworkStatsManager` 可用的下限；再低需要大量兼容分支。
+- 理由：protobuf 需引入 `google.golang.org/protobuf`，与"Go 侧零第三方依赖"冲突。
+  零依赖的价值是**交叉编译成功率**与**可验证性**（`GOPROXY=off` 也能跑测试，有断言守着）。
+- 协议已按「版本号 + 方法名 + 结构化参数」设计，换编码只需替换 Encode/Decode 两个函数，方法语义不变。
+- 若 M3 证明 JSON 是瓶颈（如 `/traffic` 高频推送），会重新评估并在此处更新说明。
 
 ---
 
-## 构建与验证
+## 数据模型
+
+提示词 10 部分列出 21 个模型。**当前已实现 6 个**（下表标 ✅），其余为计划。
+
+| 模型 | 状态 | 位置 |
+|---|---|---|
+| `ProxyNode` | ✅ 部分 | `src/syfuse/node.go`（Go，8 协议解析）+ `domain/model` |
+| `RuleEntry` | ✅ | `core/rule` + `domain/model` |
+| `InstalledManifest` | ✅ | `src/internal/manifest/manifest.go`（10 种 kind，含可还原性校验） |
+| `AppSettings` | ✅ 部分 | `domain/settings/Settings.kt`（11 组） |
+| `FilterConfig` | ✅ 部分 | `domain/EnhanceModels.kt` |
+| `Profile` | ✅ 部分 | `domain/model/Models.kt` |
+| `ProxyGroup` | 计划 M4 | — |
+| `RuleSet` | 计划 M5 | — |
+| `HostEntry` / `RewriteEntry` | 计划 M5/M8 | — |
+| `MitmConfig` | 计划 M8 | — |
+| `ModuleEntry` / `ScriptEntry` | 计划 M7 | — |
+| `BanRule` / `SplashSkipRule` / `NotifyRule` | 计划 M13 | — |
+| `HookRule` | 计划 M11 | 契约已建（`hook/HookContract.kt`） |
+| `LeakPolicy` | 计划 M12 | — |
+| `PrivilegeState` | ✅ 部分 | `privileged/` |
+| `TrafficStat` / `ConnSnapshot` | 计划 M9 | — |
+
+兼容性约定（已落地）：schema 带 `version`；**未知字段保留不丢弃**（`rawExtras`）；
+拒绝更高 `schemaVersion`；`syfuse.conf` 键名与 SY-Fusion 保持同名兼容。
+
+---
+
+## syfuse.conf 键表
+
+完整文件见 [`module/config/syfuse.conf`](module/config/syfuse.conf)。每个键都有类型 / 取值范围 / 风险等级 / UI 位置。
+
+| 键 | 默认 | 类型 | 范围 | 风险 | UI 位置 |
+|---|---|---|---|---|---|
+| `DNS_ENABLE` | `0` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
+| `MITM_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 广告与过滤 |
+| `SPLASH_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 广告与过滤 |
+| `NOTIFY_ENABLE` | `0` | bool | 0/1 | 进阶 | 设置 → 广告与过滤 |
+| `PANEL_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 浏览器面板 |
+| `DNS_UPSTREAM` | `1.1.1.1` | string | IPv4/IPv6/URL | 进阶 | 设置 → 隐私与防泄漏 |
+| `DNS_UPSTREAM_ENC` | `plain` | enum | plain/doh/dot/doq | 进阶 | 同上 |
+| `DNS_AUTO_UPDATE` | `0` | bool | 0/1 | 安全 | 同上 |
+| `DNS_UPDATE_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 同上 |
+| `DNSSRV_ENABLE` | `0` | bool | 0/1 | **危险** | 同上（接管 53 端口影响其他应用） |
+| `MITM_PORT` | `8443` | int | 1024..65535 | 危险 | 设置 → 广告与过滤 |
+| `MITM_HTTP_PORT` | `8080` | int | 1024..65535 | 危险 | 同上 |
+| `MITM_APPS` | 空 | string | 逗号分隔包名 | 危险 | 同上（**空=不解密任何应用**） |
+| `MITM_QUIC_POLICY` | `pass` | enum | pass/block/mitm | 进阶 | 同上 |
+| `PANEL_PORT` | `8848` | int | 1024..65535 | 进阶 | 设置 → 浏览器面板 |
+| `API_ENABLE` | `0` | bool | 0/1 | **危险** | 同上（开放控制通道） |
+| `PROXY_ENABLE` | `0` | bool | 0/1 | 安全 | 首页大开关 |
+| `PROXY_PORT` | `2080` | int | 1024..65535 | 安全 | 设置 → 隧道 → 代理 |
+| `PROXY_CORE` | 空 | string | 内核标识 | 进阶 | 设置 → 模块与特权 |
+| `PROXY_LEAK` | `1` | bool | 0/1 | 进阶 | 设置 → 隐私与防泄漏 |
+| `PROXY_SUB_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 配置 → 订阅 |
+| `BLACKLIST_ENABLE` | `0` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
+| `ENGINE_HEURISTIC` | `0` | bool | 0/1 | 进阶 | 同上（可能误拦） |
+| `ENGINE_STRICT_SCOPE` | `1` | bool | 0/1 | 进阶 | 同上 |
+| `ENGINE_CLIENT` / `ENGINE_CTAG` | 空 | string | — | 进阶 | 同上（对应 `$client=` / `$ctag=`） |
+| `HOSTS_EXTRA` | 空 | string | — | 进阶 | 配置 → Hosts |
+| `RULES_REPO` / `RULES_BRANCH` / `RULES_MIRROR` | 空 / `main` / 空 | string | — | 安全 | 设置 → 更新 |
+| `SCRIPT_UPDATE_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 设置 → 脚本与 Hook |
+| `HOOK_ENABLE` | `0` | bool | 0/1 | **危险** | 设置 → 脚本与 Hook |
+| `HOOK_ENGINE` | `auto` | enum | auto/zygisk/lsposed/apatch/ldpreload/ptrace | 危险 | 同上 |
+| `HOOK_APPS` | 空 | string | 逗号分隔包名 | 危险 | 同上（**空=不 Hook 任何应用**） |
+| `LEAK_GUARD` | `1` | bool | 0/1 | 安全 | 设置 → 隐私与防泄漏 |
+| `LEAK_INSPECT_INTERVAL` | `30` | int(分) | 5..1440 | 安全 | 同上 |
+| `LEAK_AUTO_FIX` | `0` | bool | 0/1 | 进阶 | 同上 |
+| `SPLASH_ENGINE` | `hook` | enum | hook/a11y | **危险** | 设置 → 广告与过滤（无障碍会读取屏幕内容） |
+| `NOTIFY_SCOPE` | 空 | string | — | 进阶 | 同上 |
+| `RESTORE_MANIFEST` | `/data/adb/syfuse/manifest/installed.json` | string | — | 安全 | 设置 → 备份与还原 |
+
+分项文件（App 内可视编辑，与文件双向同步）：`blacklist.conf`、`whitelist.conf`、
+`lists.conf`、`sources.conf`、`mitm_rules.conf`、`notify_keywords.conf`、
+`splash_rules.conf`、`user_rules.txt`、`hook_rules.conf`、`leak_policy.conf`。
+
+---
+
+## 规则语法全表
+
+### 已实现（`core:rule`，28 用例 + 38 条语料期望全绿）
+
+**三类输入形态**（可混排）：
+
+```
+0.0.0.0 ads.example.com             hosts
+127.0.0.1 tracker.example.net
+1.2.3.4   rewrite.example.com       hosts 解析重写
+address=/ads.example.com/           dnsmasq 拦截
+local=/ads.example.com/             dnsmasq 本地应答
+server=/example.org/1.1.1.1         dnsmasq 上游
+```
+
+**ABP / AGH 语义**：
+
+```
+||ads.example.com^              域名锚定拦截（含子域）
+||ads.example.com^$important    重要规则（优先级最高）
+@@||good.example.com^           例外放行
+@@||pay.example.com^$important  带 important 的例外 → 最高优先级
+https://cdn.example.com/js/     精确 URL 锚定
+/ads\/banner\d+/                正则
+10.0.0.0/8                      网段（最长前缀匹配）
+```
+
+**修饰符**（全部实现）：`$important` `$badfilter` `$match-case` `$domain=`
+`$third-party`(`$3p`) `$first-party`(`$1p`)
+
+**资源类型**：`$document` `$script` `$image` `$stylesheet` `$xmlhttprequest`(`$xhr`)
+`$subdocument` `$font` `$media` `$websocket` `$other` `$popup` `$all`
+
+**修饰规则（cosmetic）**：6 种标记按最长优先匹配 ——
+`##^`（HTML 过滤）`#@#`（取消隐藏）`#$#`（CSS 注入）`#?#`（扩展 CSS）`#%#`（脚本注入）`##`（元素隐藏）
+
+**注释符**：`!` `#` `;` 与 `[Adblock Plus 2.0]` 头
+
+**优先级模型**（严格实现，非短路 —— 收集全部候选后取最高秩）：
+
+```
+重要放行 > 重要拦截 > 普通放行 > 普通拦截 > 未命中（默认放行）
+```
+
+`$badfilter` 在**编译期**精确关闭同形规则。
+
+### 计划实现（M10）
+
+| 项 | 说明 |
+|---|---|
+| `$denyallow=` `$client=` `$ctag=` `$dnsrewrite=` `$csp=` `$removeparam=` `$redirect=` `$cookie=` `$header=` `$method=` `$permissions=` | M10 |
+| 资源类型 `$webrtc` `$ping` `$object` `$empty` `$mp4` `$inline-script` `$inline-font` `$generichide` `$specifichide` `$elemhide` `$genericblock` | M10 |
+| 四种规则集格式 `domain` / `ipcidr` / `classical` / `mrs` + 远程订阅 + 哈希校验 + 镜像加速 | M5/M10 |
+| 误拦截 1 秒内恢复（临时放行） | M10 |
+
+**cosmetic 规则的诚实声明**：`##` / `#@#` 等需要**渲染上下文**（DOM 或视图树）才能生效，
+只能在 MITM HTML 重写或局域网面板注入两条路径上工作。**在纯 DNS/连接层上无法生效**，
+本项目不会把它们计入"拦截数"。
+
+---
+
+## API 与 CLI
+
+### 模块 CLI（`syfused`）
+
+**已实现**：`daemon` `serve` `status` `token [--rotate]` `restore [--dry-run|--apply]`
+`rules paths` `rules stats` `version` `help`
+
+**已注册但未实现**（返回**退出码 78** + 计划里程碑，区别于普通错误 1）：
+`fetch`(M7/M10) `ca`(M8) `proxy`(M8) `hook`(M11) `leak`(M12)
+`rules build|syntax|verify|test|testfile|clear`(M5/M10)
 
 ```bash
-# 单元测试（不需要设备，不需要 Android SDK 之外的任何东西）
-tests/run_unit.sh
+syfused status                    # 运行状态 + 还原清单摘要 + 逐条校验问题
+syfused token                     # 显示访问令牌
+syfused token --rotate            # 重新生成（旧令牌立即失效）
+syfused restore                   # 打印还原计划（dry-run，默认）
+syfused restore --apply           # 执行还原
+syfused rules paths               # 打印全部规则相关路径及其存在性
+```
 
-# Go 内核验证：gofmt + vet + build + 55 个用例 + 零依赖校验
-tests/run_kernel.sh
+### UDS 控制协议
 
-# 红队静态检查：把六条硬红线变成可执行断言
-tests/run_module_checks.sh
+socket `/data/adb/syfuse/control.sock`（0600），换行分隔 JSON，每次连接须带 token。
 
-# UI 资源完整性（不需要设备）
-tests/ui_assets_check.sh
+**已实现方法**：`status` `version` `manifest.summary` `token.rotate` `log.tail`
 
-# 凭据扫描
-python tools/scan_secrets.py
+**已注册未实现**（返回明确错误 + 里程碑）：`proxies` `connections` `traffic`
+`rules.test` `filter.stats` `hook.status` `leak.report` `leak.fix` `config.reload` `proxies.select`
 
-# 构建 debug APK
-gradle :app:assembleDebug
+请求/应答格式见 `src/internal/ipc/ipc.go` 与 `daemon/src/main/kotlin/.../DaemonProtocol.kt`
+（两侧是同一份协议，**必须同步修改**）。
 
-# 以下三项需要设备
-tests/run_e2e.sh          # 装得上、起得来、不崩
-tests/ui_runtime_check.sh # 界面元素在、点击生效
-tests/ui_screenshot.sh    # 产出各页面 × 各主题截图
+### HTTP API / 浏览器面板 / Intent / URL Scheme
 
-# 性能
-tests/perf_rule_engine.sh        # 规则引擎编译/匹配基准
-tests/perf_apk_size.sh           # 分 ABI 体积
+**全部未实现**，计划 M13。设计约束已定：默认关闭、需 token、**禁止 WebView 内嵌面板**、
+关闭面板立即释放端口并清空会话。
 
-# 打包（APK + 模块 zip + SHA256 清单）
-tests/package.sh
+---
 
-# 内核 AAR（需要 gomobile + NDK；缺前置时 exit 2，不会静默产出空包）
-kernel/tools/build_aar.sh
+## 构建与自检
 
-# 远端状态核验（需要 GITHUB_TOKEN）
-python tools/verify_remote.py --repo <owner>/Syfuse --expect-public false
+```bash
+# 全量自检（不需要设备）
+tests/run_module_checks.sh     # 红队静态校验（R1–R6 + 18.1 结构 + M1 判定）
+tests/run_kernel.sh            # Go：gofmt / vet / build / 84 用例 / 零依赖断言
+tests/run_restore_check.sh     # 卸载残留检查（沙箱内真跑 安装→卸载→diff）
+tests/run_unit.sh              # Kotlin JVM 单测
+tests/ui_assets_check.sh       # UI 资源完整性 + 内联文案统计
+python tools/scan_secrets.py   # 凭据扫描（豁免需行内显式标记）
+
+# 构建
+./gradlew :app:assembleDebug   # App
+./gradlew :app:assembleRelease # 分 ABI release
+package.sh                     # 模块 ZIP + 分 ABI APK + SHA-256 + update.json
+
+# 交叉编译守护进程（由 package.sh 自动执行）
+cd src && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath ./cmd/syfused
+
+# 需要设备的检查（无设备时 exit 3 = SKIP，不是通过）
+tests/run_e2e.sh
+tests/ui_runtime_check.sh
+tests/ui_screenshot.sh
+tests/perf_rule_engine.sh
+tests/perf_apk_size.sh
 ```
 
 ### 退出码约定
 
-所有验证脚本遵守同一套约定，目的是**让"没跑"无法伪装成"跑过"**：
-
-| 退出码 | 含义 |
+| 码 | 含义 |
 |---|---|
 | `0` | 真的通过了 |
 | `1` | 真的失败了 |
-| `2` | 环境缺失（找不到 JDK / Gradle / SDK） |
-| `3` | 前置条件不满足而跳过（例如没有设备）——**不是通过** |
+| `2` | 环境缺失 |
+| `3` | 前置不满足而跳过 —— **不是通过** |
+| `78` | `syfused` 子命令尚未实现（区别于普通错误 1） |
 
-CI 里对 `3` 的处理是"标记为 skipped 并在 PR 上提示"，绝不是"绿色"。
+### 环境
 
----
-
-## 仓库结构
-
-```
-Syfuse/
-├── app/                  应用壳：Application / MainActivity / Manifest / 资源 / ABI splits
-├── ui/                   Compose 设计系统与全部界面（四 Tab、四主题、四状态）
-├── domain/               领域模型与用例契约（纯 JVM，可在无 Android 环境单测）
-│   ├── model/            Profile / ProxyNode / RuleEntry / RoutingMode ...
-│   ├── settings/         设置目录（11 组）与 SettingSpec
-│   ├── config/           配置包编解码（未知字段保留）
-│   └── engine/           EngineController / DataPlane / EngineState / TrafficMeter
-├── core/
-│   ├── common/           SyfuseResult / 错误类型
-│   └── rule/             过滤规则引擎（纯 JVM）
-│       ├── DomainTrie.kt         反标签后缀 Trie
-│       ├── Ipv4CidrTrie.kt       二进制 Trie，最长前缀
-│       ├── PatternCompiler.kt    ABP 模式 → 匹配器
-│       ├── ModifiersParser.kt    $third-party 等全部修饰符
-│       ├── CosmeticRule.kt       元素隐藏规则（6 种标记）
-│       ├── RuleParser.kt         hosts / dnsmasq / ABP 三类语法识别
-│       └── FilterEngine.kt       编译 + $badfilter + 优先级匹配
-├── data/                 Room / DataStore / Keystore 凭据库 / 仓储
-├── engine/               内核抽象与 IPC 契约（DataPlane 实现唯一替换点）
-├── kernel/               Go 代理内核
-│   ├── go.mod            零第三方依赖
-│   ├── src/              节点解析 / 配置校验 / 引擎 API（55 个 Go 用例）
-│   ├── tools/build_aar.sh gomobile bind 入口
-│   └── Makefile
-├── privileged/           root 特权层（libsu），命令白名单
-├── lsposed-bridge/       LSPosed 桥接契约
-├── module/               KernelSU / Magisk 模块
-│   ├── module.prop
-│   ├── customize.sh      安装钩子（$MODPATH）
-│   ├── post-fs-data.sh   早期启动
-│   ├── service.sh        延迟启动
-│   ├── action.sh         模块管理器里的"动作"按钮
-│   ├── uninstall.sh      卸载还原
-│   └── META-INF/         update-binary / updater-script
-├── tests/                验证套件（见上方「构建与验证」）
-│   ├── corpus/           规则语料
-│   ├── expect.tsv        语料期望表（唯一事实来源）
-│   └── *.sh
-├── tools/                scan_secrets / verify_files / verify_remote / set_owner
-├── .github/workflows/    CI
-├── update.json           模块更新清单
-├── LICENSE               GPL-3.0-or-later
-└── NOTICE                第三方组件与参考来源署名
-```
-
-### 模块边界的一条硬规矩
-
-**UI 层不感知任何内核具体类型。** `ui` 依赖 `domain.engine.EngineController`（接口），
-内核实现只通过 `engine` 模块的 `EngineModule` 注入。换内核（NotLinked → Go AAR → 其它）
-只改一个文件的绑定，UI 与规则引擎零改动。
-
----
-
-## Shadowrocket 功能覆盖表
-
-三态标记：
-
-- **复刻** —— 与 Shadowrocket 功能等价、概念同名、操作路径同构、默认值合理
-- **增强** —— Shadowrocket 没有、本工程额外提供的差异能力
-- **不做** —— 有意不做，并说明原因
-
-### 主功能（复刻）
-
-| 功能 | 状态 | 说明 |
+| 组件 | 版本 | 说明 |
 |---|---|---|
-| 首页大开关（连接/断开） | 复刻 | 四态：未连接 / 连接中 / 已连接 / 连接失败。**当前内核未接入，停在"未连接"并显示原因** |
-| 实时上下行速率 | 复刻 | 1 秒采样；内核未接入时显示 0 而非伪造数字 |
-| 累计流量 | 复刻 | 由 `TrafficMeter` 计量，含计数器回退（重连）检测 |
-| 节点列表 | 复刻 | 名称/服务器/协议，支持搜索 |
-| 节点测速 | 复刻 | 批量 URL 测试；无内核时明确报"未接入" |
-| 路由模式（全局/规则/直连） | 复刻 | 三模式，概念与操作路径对齐 |
-| 规则页 | 复刻 | 规则源管理 + **可交互的规则测试**（真实运行引擎，展示完整匹配链路） |
-| 设置页 | 复刻 | 11 组，含搜索、专家模式、危险项二次确认 |
-| 配置文件导入/导出 | 复刻 | 导入前自动备份，失败自动回滚；未知字段保留 |
-| 主题 | 复刻 | 跟随系统 / 浅色 / 深色 / AMOLED 纯黑 |
-| 分应用代理 | 不做 | 需要 `QUERY_ALL_PACKAGES` 与包可见性声明，权限代价高于收益；且与 R3 的"最小权限"冲突 |
-| 流量统计图表 | 不做 | Shadowrocket 该功能本身较弱，复刻价值低 |
+| JDK | Temurin 21.0.12.1+1 | |
+| Gradle | 8.11.1 | wrapper 已入库 |
+| Android SDK | platform 35 / build-tools 35.0.0 | |
+| Go | 1.23.4 | 零第三方依赖，`GOPROXY=off` 可测 |
+| Kotlin / KSP / AGP | 2.1.0 / 2.1.0-1.0.29 / 8.7.3 | |
 
-### 差异能力（增强）
+`tests/env.sh` 按 `显式环境变量 → $SYFUSE_TOOLCHAIN → PATH` 顺序自动定位，无需手工配置。
 
-| 能力 | 状态 | 说明 |
+---
+
+## 权限说明
+
+| 权限 | 用途 | 何时申请 |
 |---|---|---|
-| 内容过滤引擎 | **部分** | 规则语义与匹配模型已实现且可测（AdGuard Home 规则语义 × uBlock Origin 优先级模型）；**数据面尚未接入**，因此目前不产生实际拦截 |
-| 优先级模型（非短路） | 复刻增强 | 收集全部候选后取最高秩，而不是首个命中即返回。这让"重要放行"能压过"普通拦截"，语义更可预期 |
-| 开屏广告跳过 | 不做 | 需要 LSPosed 具体 Hook，本版本只有契约 |
-| 通知清理 | 不做 | 同上 |
-| 网络层拦截 | 不做 | 依赖内核与 VpnService |
-| root / LSPosed 特权层 | **骨架** | 命令白名单与模块骨架已实现；具体能力未接入 |
-| 配置即产品 | 复刻增强 | 配置包编解码支持未知字段保留与版本拒绝，便于跨版本演进 |
+| `INTERNET` | 代理本身 | 已申请 |
+| `ACCESS_NETWORK_STATE` | 判断网络可用性，驱动连接状态机 | 已申请 |
+| `BIND_VPN_SERVICE` | 无 root 模式的 TUN 隧道 | **未申请** —— VpnService 未实现，声明了不实现属于虚假声明（15.8）。M3 实现时同步声明 |
+| root（KernelSU/Magisk/APatch） | 系统级能力：TPROXY、证书、hosts、Hook | 可选，由用户在模块管理器授予 |
+| 无障碍 | 无 root 时的开屏跳过 | **默认关**（危险能力，会读取屏幕内容） |
+| 通知 | 常驻通知与告警 | 默认开 |
+| 剪贴板 | 识别节点分享链接 | 默认开 |
+| 位置 | 按 SSID 触发规则（Android 对读取 SSID 的限制） | **默认关** |
+| `QUERY_ALL_PACKAGES` | 按应用分流 / Hook 作用域选择 | **未申请**，M11 评估后按需申请 |
 
-**元素隐藏规则（cosmetic rules）的诚实声明**：`##` / `#@#` 等规则需要**渲染上下文**
-（DOM 或视图树）才能生效。它们只能在两条路径上工作：MITM 时重写 HTML，或在局域网面板里注入。
-**在纯 DNS/连接层上它们无法生效**，本项目不会把它们计入"拦截数"。
-`CosmeticControl` 只负责解析与开关，不做效果承诺。
-
----
-
-## 账号 → 包名映射
-
-包名在运行时从账号推导，**不硬编码**：
-
-```
-GitHub 账号  →  规范化（转小写 + 去连字符/下划线/点）  →  包名
-vip-svip     →  vipsvip                              →  io.github.vipsvip.syfuse
-Some_User    →  someuser                             →  io.github.someuser.syfuse
-```
-
-解析顺序（`tools/set_owner.sh`）：
-
-1. `$SYFUSE_OWNER`
-2. `$GITHUB_REPOSITORY_OWNER` / `$GITHUB_ACTOR`（GitHub Actions 自动注入）
-3. `gh api user --jq .login`
-4. `git remote get-url origin` 中的 owner
-5. 保守默认值 `vip-svip`（**会显式打印"这是默认值而非解析结果"**）
-
-改账号：
-
-```bash
-tools/set_owner.sh --print              # 先看会改成什么
-tools/set_owner.sh --apply              # 改写包名 + 目录 + 署名
-tools/set_owner.sh --apply --owner xxx  # 显式指定
-```
-
-**署名不写 AI 工具名**，写解析出的账号。
+**未申请**：`READ_PHONE_STATE`、`AD_ID`、`READ_SMS`、`READ_CONTACTS`、`RECORD_AUDIO`、
+`ACCESS_FINE_LOCATION`、`ACCESS_BACKGROUND_LOCATION`。`allowBackup=false`。
 
 ---
 
-## 安装
+## 风险清单（M0）
 
-### 应用
-
-```bash
-# 从 Release 下载对应 ABI 的 APK
-adb install -r Syfuse-v0.1.0-arm64-v8a.apk
-```
-
-支持的 ABI：`arm64-v8a` / `armeabi-v7a` / `x86_64`。分 ABI 打包是为了控制单包体积。
-
-### 特权层模块（KernelSU / Magisk）
-
-```bash
-# 从 Release 下载 Syfuse-Module-v0.1.0.zip，在模块管理器里"从本地安装"
-# 或
-adb push Syfuse-Module-v0.1.0.zip /sdcard/
-# 然后在 KernelSU/Magisk 应用中安装该 zip
-```
-
-安装器会把模块落到 `/data/adb/modules/syfuse`，并创建 `/data/adb/syfuse`（0700）作为数据目录。
-
-**卸载即还原**：`module/uninstall.sh` 会删除模块目录、`/data/adb/syfuse`、以及
-`service.sh` 注册的任何运行时文件。不触碰系统分区。也可在模块管理器里直接移除。
-
-> ⚠️ 本版本模块包**不含内核二进制**（M2 未完成）。安装它只会得到特权层骨架，
-> 不具备实际代理能力。
-
----
-
-## 权限
-
-应用只申请两个权限：
-
-| 权限 | 用途 |
-|---|---|
-| `INTERNET` | 代理本身 |
-| `ACCESS_NETWORK_STATE` | 判断网络可用性，用于连接状态机 |
-
-**未申请**（刻意）：`QUERY_ALL_PACKAGES`、`READ_PHONE_STATE`、`AD_ID`、
-定位、通讯录、短信、录音。`allowBackup=false`，凭据不随系统备份外流。
-
-未来实现 VpnService 时会新增 `BIND_VPN_SERVICE`（`android:permission` 属性，非用户授权项）
-与用户可见的 VPN 授权弹窗 —— 到那时才会加，现在不加是因为**声明了不实现等于虚假声明**。
-
----
-
-## 规则语法
-
-支持的三种输入形态（可混在同一个规则源里，解析器逐行识别）：
-
-### 1. hosts
-
-```
-0.0.0.0 ads.example.com
-127.0.0.1 tracker.example.net
-```
-
-### 2. dnsmasq
-
-```
-address=/ads.example.com/0.0.0.0
-server=/example.org/1.1.1.1
-```
-
-### 3. AdGuard Home / ABP 语义
-
-```
-||ads.example.com^             域名及其子域
-||ads.example.com^$important   重要规则（优先级最高）
-@@||safe.example.com^          例外放行（白名单）
-/ads\/banner\d+/               正则
-10.0.0.0/8                     网段（最长前缀匹配）
-example.com##.ad-banner        元素隐藏（需渲染上下文，见上方说明）
-example.com#@#.ad-banner       元素隐藏例外
-||a.com^$third-party,script    带修饰符
-||a.com^$badfilter             编译期消解该条
-```
-
-### 优先级模型
-
-不是"首个命中即返回"，而是**收集全部候选后取最高秩**：
-
-```
-重要放行 (important + 例外)   rank 4
-重要拦截 (important)          rank 3
-普通放行 (例外)               rank 2
-普通拦截                      rank 1
-未命中                        rank 0
-```
-
-这样 `@@||x^` 与 `||x^$important` 同时存在时结果可预期，不受规则书写顺序影响。
-
-### 修饰符
-
-支持 `$important` `$third-party` / `$3p` `$first-party` / `$1p` `$badfilter`
-`$domain=` `$script` `$image` `$stylesheet` `$xhr`（含 `xmlhttprequest` 别名）
-`$subdocument` `$document` `$font` `$media` `$websocket` `$other` `$popup`
-`$all` 等。未知修饰符产生 **WARNING 而非静默丢弃** —— 静默丢弃会让规则集
-悄悄失效，是最难排查的一类问题。
-
-### 语料与期望表
-
-`tests/corpus/01_syntax_mixed.txt` 是规则语料，`tests/expect.tsv` 是期望表
-（唯一事实来源）。`CorpusConsistencyTest` 会逐条比对，任何一条不符即失败。
-
----
-
-## 脚本 API
-
-模块内的 shell 脚本约定：
-
-| 脚本 | 何时被调用 | 职责 |
-|---|---|---|
-| `customize.sh` | 安装时被安装器 `source` | 按架构落位内核、建数据目录、收敛权限。**必须用 `$MODPATH`**（`$0` 指向安装器本身） |
-| `post-fs-data.sh` | 早期启动（`/data` 挂载后） | 只做不能延后的事（如创建运行时目录）。此时网络与大部分服务尚不可用 |
-| `service.sh` | 启动后延迟执行 | 拉起常驻进程。必须自带存活检查，不能假设只跑一次 |
-| `action.sh` | 用户在模块管理器点"动作" | 交互入口（如打印状态、重载配置） |
-| `uninstall.sh` | 卸载时 | **完整还原**：删模块目录、删 `/data/adb/syfuse`、清运行时文件 |
-
-约定：脚本只写模块目录与 `/data/adb/syfuse`，**不触碰系统分区**（侵入原则）。
-
----
-
-## 本地 API
-
-规划中的本地面板/API（用于局域网查看状态、批量导入配置）：
-
-- 默认**关闭**。开启需要显式操作，且默认只监听回环。
-- 需要 token 鉴权；token 由应用生成，不写入仓库。
-- 只读接口（状态/规则统计）与写接口（导入配置）分离授权。
-
-**本版本未实现**。上面写的是接口约定，不是已有能力 —— 之所以先写下来，
-是为了让后续实现不会退化成"默认开启、无鉴权"。
-
----
-
-## 性能预算与实测
-
-预算（第 11 部分目标）与实测是两回事，这里分开记。
-
-| 指标 | 预算 | 实测（2026-10-12，Windows / JDK 21.0.12.1 / 1M 规则） | 判定 |
+| # | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| 100 万条规则解析 | < 1 s | **468 ms** | ✅ |
-| 100 万条规则编译 | < 3 s | **439 ms**（索引化 990,000 / 线性 10,000） | ✅ |
-| 单次匹配 p99 | < 0.5 ms | **0.965 ms** | ❌ **超预算约 1.9 倍** |
-| 单次匹配 p50 | — | 0.701 ms | — |
-| 匹配吞吐 | — | 1,503 次/秒 | — |
-| release 单 ABI APK | < 15 MB | **1.3 MB**（R8 + 资源压缩；debug 未压缩为 18 MB） | ✅ |
-| 冷启动到首帧 | < 800 ms | 需要设备，见 `tests/run_e2e.sh` 输出 | — |
-
-原始数据在 `tests/perf_results.txt` 与 `tests/perf_apk_size.txt`，
-由 `tests/perf_rule_engine.sh` 与 `tests/perf_apk_size.sh` 生成。
-**不把数字写进正文以外的任何地方** —— 正文里的数字会随机器变化而失真，落文件才能核对。
-
-### 关于 p99 超预算
-
-**这是一个真实的、未解决的性能缺口，不是测量误差。** 根因是清楚的：
-
-基准里 1% 的规则是线性正则（10,000 条），而采样中有一半是**未命中域名 Trie** 的请求。
-未命中时引擎必须逐条测试全部 10,000 条线性规则 —— 这是 O(n) 的，
-p99 因此被这一条路径主导（p50 与 p99 只差 0.26 ms，说明分布很窄，瓶颈就是"线性遍历"本身）。
-
-**这不是"再调调参数"能解决的问题**，需要真正的索引化改造：给正则规则提取必需的
-字面量子串（例如 `/tracker\d+/` 的字面量是 `tracker`），按字面量分桶，
-未命中 Trie 时只测同桶的规则。uBlock Origin 用的是同类思路。
-
-**我没有在这次交付里做这个改造。** 理由：它需要改动 `PatternCompiler` 与 `FilterEngine`
-的核心匹配路径，而当前 `tests/expect.tsv` 的 38 条期望只覆盖语义正确性，
-不足以证明索引化改造后语义不变。先补语料、再改索引，顺序不能反。
-
-这条已记入 [`CHANGELOG.md`](CHANGELOG.md) 的「已知缺口」。
-
-> 顺带一提：对 DNS 层过滤的实际场景（每秒几十次查询量级），0.7–1.0 ms 的单次匹配
-> 完全够用。所以这不是"能不能上线"的问题，而是"宣称的预算没达到"的问题。
-> 把没达到的预算说成达到了，才是真正的问题。
-
+| 1 | **内核未接入** | 代理上网不可用，产品核心价值为 0 | M3 优先；当前如实报 `ErrTunnelNotImplemented`，不伪造 |
+| 2 | **真机验证缺失** | 所有"可用"判定都只是"沙箱可用" | 下一步先做真机 `GOOS=linux` 二进制可用性验证（代价最低、证伪收益最大） |
+| 3 | `GOOS=linux` 静态二进制在 Android/bionic 上能否运行 | 若不成立，交叉编译方案要重做（改 `GOOS=android` + NDK cgo） | 未验证，标【待核实】；M3 第一件事实测 |
+| 4 | UDS + SELinux 域限制 | 模块进程与 App 不同 SELinux 域时 `LocalSocket` 可能被拒 | 未验证；M3 实测，备选方案是 abstract socket + 域标签 |
+| 5 | 玻璃性能 | 参考项目实测全屏模糊 P50 19ms→150ms、丢帧 3.68%→100% | 4.11 白名单 + 离屏降采样(≥2) + 三档 + 超标自动降档；`tests/ui_glass_perf` 断言 |
+| 6 | sing-box 静态链接 | GPL-3.0-or-later 传染 → 项目必须同许可（已满足）；内核体积大 | APK 预算 30MB / ZIP 45MB；M3 实测 |
+| 7 | 规则引擎 p99 | 100 万条实测 **0.965ms**，预算 **<1ms** → **达标但余量小**（仅 3.5%） | M10 做正则字面量分桶索引化；先补语料再改索引 |
+| 8 | 21 个数据模型只实现 6 个 | 后续里程碑工作量大 | 按里程碑分批；每批带 Room 迁移 |
+| 9 | `screenshots/` 8 张实拍缺失 | 无法做实拍复刻比对 | 标【待核实】；不生成、不抓取（15.4） |
+| 10 | 提示词 mihomo 引用错误 | 若照抄会选错内核 | 已实证并勘误（见「内核选型」） |
+| 11 | 权限/无障碍被用户拒绝 | 开屏跳过等降级 | 按 3.6 降级矩阵；功能不缺失、仅能力降级 |
+| 12 | 脚本沙箱逃逸 | 恶意脚本执行任意代码 | M7 做 QuickJS 沙箱 + 逃逸测试（14 部分安全维度） |
 
 ---
 
-## 安全模型与红线
+## 【待核实】项
 
-### 六条硬红线
+| # | 项 | 核实方法 | 当前采用的默认实现 |
+|---|---|---|---|
+| 1 | `screenshots/` 8 张实拍是否存在 | 确认是否有归档位置；有则放入该目录 | 按 4 部分**文字规格**实现；`ui_screenshot.sh` 不做比对 |
+| 2 | `GOOS=linux` 静态二进制在 Android 可运行性 | 真机 `adb push` + 执行 | 假定可用（纯 stdlib 无 cgo）；M3 第一件事实测 |
+| 3 | UDS 在模块进程 ↔ App 之间的 SELinux 可达性 | 真机实测 | 假定可达；备选 abstract socket |
+| 4 | `MetaCubeX/mihomo` 是否曾是代理内核、现迁往何处 | 查项目官网/文档 | **不采用该候选**，选 sing-box |
+| 5 | sing-box 的 `gomobile bind` 可行性 | M3 实测 | 假定可行；若不可行改为子进程模式（模块内直接跑 sing-box 二进制） |
 
-| 编号 | 红线 | 执行方式 |
-|---|---|---|
-| R1 | 主界面必须原生 Compose，**无 WebView** | `run_module_checks.sh` 静态检索 `android.webkit` / `WebView` / `loadUrl`；同时反向验证确实用了 `setContent` |
-| R2 | 内核**静态随包**，不在运行时下载二进制 | 静态检索 `DownloadManager` / `Runtime.exec("curl`；校验存在 AAR / jniLibs 接入点 |
-| R3 | **零遥测** | 版本目录中禁止出现 firebase / crashlytics / sentry / umeng / bugly / appsflyer / adjust 等坐标；Manifest 权限白名单校验 |
-| R4 | **不编造** | 禁止 `NotImplementedError` / `TODO(implement)`；版本号三处必须一致；UI 不得硬编码成功态文案 |
-| R5 | 密钥不进仓库、不落明文 | `tools/scan_secrets.py` 作为提交前闸门；`allowBackup=false`；`local.properties` 与 `*.jks` 在 `.gitignore` |
-| R6 | 危险能力**显式披露** + **一键还原** | 本文件与 `DISCLAIMER.md` 必须存在且含还原说明；`uninstall.sh` 必须真做清理 |
+---
 
-### 凭据处理
+## 常见问题
 
-- 订阅链接、密码等敏感值存在 Android Keystore 保护的 AES-256-GCM 保险库中，
-  存储格式 `v1:<b64 iv>:<b64 ct>`。
-- 仓库内**不存在**任何真实凭据。`scan_secrets.py` 会对 git 跟踪的全部文本文件做正则扫描，
-  命中即失败。
+**Q：为什么还没有代理功能？**
+A：当前是 M1（模块骨架）。代理内核在 M3 接入。本文档不会把"计划做"写成"已做"。
 
-### 危险能力的披露
+**Q：为什么 `syfused` 子命令有的报"未实现"还返回 78？**
+A：退出码 78 专门表示"该功能尚未实现"，让脚本能把它与真实错误（1）区分开。
+这是刻意设计——比"静默什么都不做"诚实。
 
-特权层（root / LSPosed）属于高风险能力：
+**Q：为什么不用 WebView 做界面？**
+A：15.1 硬要求。原生 Compose 的性能与可访问性不可替代；局域网面板是唯一例外且默认关闭。
 
-- 它能让应用修改**其它应用**的行为（广告过滤、通知清理）。
-- 它要求设备已解锁并安装 KernelSU/Magisk。
-- 误用可能导致目标应用崩溃或数据异常。
+**Q：为什么玻璃效果这么麻烦？**
+A：参考项目实测过全屏实时模糊的代价：P50 帧耗时 19ms→150ms、丢帧率 3.68%→100%。
+玻璃是明确要求，所以要实现；但必须白名单 + 降采样 + 三档 + 自动降级，否则是失控。
 
-因此：所有危险项在设置页带 `RiskBadge`（三重编码：颜色 + 图标 + 文字，
-不只靠颜色，保证色觉障碍可用），且带 `requiresConfirm` 的项一律二次确认。
-所有专家级改动都可一键恢复推荐值。
+**Q：为什么许可证是 GPL-3.0-or-later 而不是 MIT？**
+A：内核 sing-box 是 GPL-3.0-or-later（已实证 LICENSE 原文），静态链接会传染。
+换成 MIT 会造成许可冲突——这是法律问题，不是风格偏好。
+
+**Q：为什么 `action.sh` 有 11 项但 7 项点了报"未实现"？**
+A：菜单结构按 3.5 固定，但每项都真的接了功能或明确报错。**"按了没反应"才是违规**。
 
 ---
 
 ## 免责声明
 
 见 [`DISCLAIMER.md`](DISCLAIMER.md)。摘要：本项目仅供学习与研究网络协议使用。
-使用者需自行确认在当地法律法规下使用代理工具的合法性，并对自己的行为负责。
+网络代理、HTTPS 解密、应用 Hook 与系统级网络拦截属于双刃性质的技术能力——
+请在目标地区法律法规与目标应用服务条款允许的范围内使用；**仅对自有设备与你拥有授权的流量**
+执行 MITM 与 Hook；不得用于规避合法监管、破解他人服务、窃取他人数据或侵犯他人隐私。
 作者不对任何因使用本软件导致的损失承担责任。
 
 ---
@@ -514,37 +592,22 @@ p99 因此被这一条路径主导（p50 与 p99 只差 0.26 ms，说明分布�
 ## 致谢与许可
 
 - 本项目以 **GPL-3.0-or-later** 发布，见 [`LICENSE`](LICENSE)。
-  许可证**不会**改成 MIT —— 内核侧的 GPL 传染性决定了整体必须留在 GPL 族。
-- 参考了 [`vip-svip/SY-Fusion`](https://github.com/vip-svip/SY-Fusion) 的
-  **规则语义设计与工程验证纪律**。该仓库当前**未声明许可证**，因此本项目
-  **未复制其任何代码**，只在设计层面借鉴并在 [`NOTICE`](NOTICE) 中具名致谢。
-- 第三方组件与许可证清单见 [`NOTICE`](NOTICE)。
+  许可证**不会**改成 MIT —— 理由见「内核选型与许可核实」。
+- 过滤规则语义与工程验证纪律参考开源项目 **SY-Fusion**
+  （AdGuard Home 规则语义 × uBlock Origin 匹配模型的融合过滤模块，KernelSU / Magisk 形态）。
+  本项目**未复制其任何代码**，只在设计层面借鉴。
+- 内核候选 **sing-box**（`SagerNet/sing-box`，GPL-3.0-or-later）。
+  第三方组件与许可证清单见 [`NOTICE`](NOTICE)。
 
 ---
 
 ## 待执行的一步
 
-以下动作需要 GitHub 凭据，本地无法完成。**这是一条命令，不是一个问题**：
+无。账号与令牌可用，建仓 / 推送 / 核验均已完成。
 
-```bash
-# 1) 登录（若无 gh）
-gh auth login
+---
 
-# 2) 建私有仓库并推送（默认私有，不得自动改为公开）
-cd "$(git rev-parse --show-toplevel)"
-gh repo create "$(gh api user --jq .login)/Syfuse" --private --source=. --remote=origin --push
+## 作者
 
-# 3) 统一包名与署名到你的账号
-tools/set_owner.sh --apply && git commit -am "chore: set owner" && git push
-
-# 4) 核验远端状态（必须报 private 且 license 为 GPL-3.0 族）
-python tools/verify_remote.py --repo "$(gh api user --jq .login)/Syfuse" --expect-public false
-```
-
-发布首个 Release（可选，需先完成 M2 内核构建）：
-
-```bash
-tests/package.sh
-gh release create v0.1.0 --title "Syfuse v0.1.0" \
-  --notes-file CHANGELOG.md dist/Syfuse-v0.1.0-*.apk dist/Syfuse-Module-v0.1.0.zip
-```
+`vip-svip`（运行时解析出的 GitHub 账号，非硬编码、非 AI 工具名）。
+改账号请运行 `tools/set_owner.sh --apply`。

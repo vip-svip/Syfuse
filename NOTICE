@@ -64,11 +64,27 @@ Copyright (C) 2026 vip-svip
 | Gradle | 8.11.1 | Apache-2.0 |
 | Go（内核构建） | 1.23.4 | BSD-3-Clause |
 
-### 2.3 内核侧依赖
+### 2.3 内核候选（许可已实证）
 
-代理内核（Go）的依赖清单在 `kernel/go.mod`。**该模块尚未构建**，
-因此本文件暂不列出其传递依赖 —— 等内核真正产出后在此补齐，
-不留"预计会用到"这种无法核对的条目。
+代理内核选定 **sing-box**（`SagerNet/sing-box`）。
+
+| 项 | 实测值 | 核实方式 |
+|---|---|---|
+| 许可证 | **GPL-3.0-or-later** | 读取仓库 `LICENSE` 原文：*"GNU General Public License … either version 3 of the License, or (at your option) any later version"* |
+| 主语言 | Go（5.63 MB） | GitHub Languages API |
+| 默认分支 | **`testing`**（不是 `main`） | GitHub Repos API |
+| 仓库体积 | 29511 KB | GitHub Repos API |
+
+> **为什么在这里写这么细**：GitHub 的 `license.spdx_id` 对 sing-box 返回
+> `NOASSERTION`（因为它的 LICENSE 文件只有 17 行的短声明，不是 GPL 全文）。
+> 如果只看 API 字段就会以为"许可不明"。**许可推导必须读原文，不能读摘要。**
+
+**未采用 mihomo**：提示词 9.2/18.3 引用的 `MetaCubeX/mihomo` 经实测
+**不是代理内核** —— 该仓库当前是崩坏星穹铁道的游戏数据解析器（MIT，Python）。
+详见 README 的「内核选型与许可核实」勘误说明。
+
+内核实际接入后，其传递依赖清单会在此补齐（含版本与许可证）。
+**不写"预计会用到"这种无法核对的条目。**
 
 ---
 

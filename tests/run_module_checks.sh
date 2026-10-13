@@ -171,10 +171,22 @@ else
   fail "存在未实现占位："; echo "$ph" | sed 's/^/    /'
 fi
 # 4d. README 必须声明"尚未交付"清单 —— 防止文档只讲成绩
-if [ -f README.md ] && grep -q "尚未交付" README.md; then
-  pass "README 含「尚未交付」清单"
+# README 必须如实披露未完成项。18.7 要求它含「功能可用性报告」；
+# 只讲成绩的文档等于编造，所以这里做硬断言。
+if [ -f README.md ] && grep -q "功能可用性报告" README.md; then
+  pass "README 含「功能可用性报告」"
 else
-  fail "README 缺少「尚未交付」清单（只讲成绩的文档等于编造）"
+  fail "README 缺少「功能可用性报告」（18.7 要求，只讲成绩的文档等于编造）"
+fi
+for section in "功能覆盖度对照表" "逐屏界面清单" "规则语法全表" "syfuse.conf 键表" "权限说明"; do
+  grep -q "$section" README.md 2>/dev/null && pass "README 含「$section」" \
+    || fail "README 缺少「$section」（18.7 要求）"
+done
+# 覆盖度对照表必须含三态标记
+if grep -q "超集增强" README.md && grep -q "不做" README.md; then
+  pass "覆盖度对照表含三态标记（复刻/超集增强/不做）"
+else
+  fail "覆盖度对照表缺少三态标记"
 fi
 
 # ---------------------------------------------------------------------------

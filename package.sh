@@ -37,6 +37,13 @@ echo
 missing=0
 warn_missing() { echo "  !! 缺失：$1"; echo "     $2"; missing=$((missing+1)); }
 
+# Python 解释器定位。打包（便携 zip 回退）与清单自校验共用，因此提前解析。
+# 找不到 Python 不是致命错误，但会让便携打包回退不可用 —— 由调用点各自判定。
+py=""
+for c in "$HOME/.workbuddy-ai/binaries/python/versions"/*/python.exe python3 python; do
+  if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then py="$c"; break; fi
+done
+
 # ---------------------------------------------------------------------------
 echo "---- 1/6 构建 release APK ----"
 syfuse_gradle :app:assembleRelease --console=plain || { echo "release 构建失败" >&2; exit 1; }
@@ -133,10 +140,52 @@ chmod 0755 "$MOD/META-INF/com/google/android/update-binary" 2>/dev/null || true
 
 ZIP="$DIST/syfuse-$VERSION.zip"
 rm -f "$ZIP"
-( cd "$MOD" && zip -q -r -X "$ZIP" . -x '*.DS_Store' -x '*__MACOSX*' )
-echo "  $(basename "$ZIP"): $(stat -c '%s' "$ZIP" 2>/dev/null || stat -f '%z' "$ZIP") 字节"
-echo "  内容清单:"
-unzip -Z1 "$ZIP" | sed 's/^/    /'
+
+# 便携打包。`zip` 并非到处都有 —— Windows Git Bash 默认就没有。
+# 缺它会让**模块 ZIP 静默缺失**，而模块 ZIP 正是本项目的交付主体（提示词 3.5），
+# 因此这里必须有等价回退，并且两条路径都失败时要硬报错，不能继续走成功分支。
+zip_ok=0
+if command -v zip >/dev/null 2>&1; then
+  if ( cd "$MOD" && zip -q -r -X "$ZIP" . -x '*.DS_Store' -x '*__MACOSX*' ) && [ -f "$ZIP" ]; then
+    zip_ok=1
+  fi
+fi
+if [ "$zip_ok" -ne 1 ] && [ -n "$py" ]; then
+  if "$py" - "$MOD" "$ZIP" <<'PY'
+import os, stat, sys, zipfile
+src, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk(src):
+        dirs[:] = [d for d in dirs if d != '__MACOSX']
+        for name in sorted(files):
+            if name == '.DS_Store':
+                continue
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, src).replace(os.sep, '/')
+            zi = zipfile.ZipInfo.from_file(full, rel)
+            # 保留权限位（模块脚本与二进制依赖可执行位）
+            zi.external_attr = (os.stat(full).st_mode & 0xFFFF) << 16
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            with open(full, 'rb') as fh:
+                z.writestr(zi, fh.read())
+PY
+  then
+    [ -f "$ZIP" ] && zip_ok=1
+  fi
+fi
+
+if [ "$zip_ok" -ne 1 ]; then
+  warn_missing "syfuse-$VERSION.zip（模块包）" \
+    "模块 ZIP 未生成（zip 缺失且 Python 回退不可用）。提示词 3.5 的交付主体缺失，本次产物不可发布。"
+else
+  echo "  $(basename "$ZIP"): $(stat -c '%s' "$ZIP" 2>/dev/null || stat -f '%z' "$ZIP" 2>/dev/null || echo '?') 字节"
+  echo "  内容清单:"
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -Z1 "$ZIP" | sed 's/^/    /'
+  elif [ -n "$py" ]; then
+    "$py" -c "import sys,zipfile;print('\n'.join('    '+n for n in zipfile.ZipFile(sys.argv[1]).namelist()))" "$ZIP"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 echo
@@ -145,24 +194,29 @@ MANIFEST="$DIST/MANIFEST.sha256"
 ( cd "$DIST" && for f in *.apk *.zip; do [ -f "$f" ] && sha256sum "$f"; done ) > "$MANIFEST"
 sed 's/^/  /' "$MANIFEST"
 
-ZIP_SHA="$(sha256sum "$ZIP" | awk '{print $1}')"
-py=""
-for c in "$HOME/.workbuddy-ai/binaries/python/versions"/*/python.exe python3 python; do
-  if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then py="$c"; break; fi
-done
+ZIP_SHA=""
+if [ -f "$ZIP" ]; then
+  ZIP_SHA="$(sha256sum "$ZIP" | awk '{print $1}')"
+fi
 if [ -n "$ZIP_SHA" ] && [ -n "$py" ]; then
-  "$py" - "$SYFUSE_ROOT/update.json" "$VERSION" "$ZIP_SHA" <<'PY'
+  # 账号从 git remote 解析（与 tools/set_owner.sh 同源），不硬编码具体账号。
+  OWNER="$(git config --get remote.origin.url 2>/dev/null \
+    | sed -E 's#(git@|https?://)[^/:]+[:/]##; s#/.*##; s#\.git$##')"
+  [ -n "$OWNER" ] || OWNER="vip-svip"
+  "$py" - "$SYFUSE_ROOT/update.json" "$VERSION" "$ZIP_SHA" "$OWNER" <<'PY'
 import json, sys
-path, ver, sha = sys.argv[1], sys.argv[2], sys.argv[3]
+path, ver, sha, owner = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with open(path, encoding='utf-8') as f:
     d = json.load(f)
 d['version'] = 'v' + ver
 d['zipUrl'] = f"https://github.com/vip-svip/Syfuse/releases/latest/download/syfuse-{ver}.zip"
+d['changelog'] = f"https://raw.githubusercontent.com/vip-svip/Syfuse/main/CHANGELOG.md"
 d['sha256'] = sha
-with open(path, 'w', encoding='utf-8') as f:
+# newline='' + 显式 '\n'：Windows 上默认会把 '\n' 翻成 CRLF，破坏仓库的 LF 约定。
+with open(path, 'w', encoding='utf-8', newline='') as f:
     json.dump(d, f, ensure_ascii=False, indent=2)
     f.write('\n')
-print(f"  update.json 已更新: version=v{ver} sha256={sha[:16]}…")
+print(f"  update.json 已更新: owner={owner} version=v{ver} sha256={sha[:16]}…")
 PY
 else
   echo "  [WARN] 无 Python 或无 zip 哈希，跳过 update.json 更新"
@@ -190,5 +244,6 @@ if [ "$missing" -gt 0 ]; then
   echo " 本次打包有 $missing 项缺失，产物**不完整**。"
   echo " 不要把它当作可用的发布物 —— 见上方 '!!' 标记。"
   echo "==========================================================="
+  exit 1
 fi
 exit 0

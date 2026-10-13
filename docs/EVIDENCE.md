@@ -1163,6 +1163,7 @@ ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`s
 | `action.sh` 菜单数：PROGRESS 写 19、README 写 11 | 两者都不算错（门禁数全部菜单行 = 主菜单 11 + 两子菜单 8）；已改成无歧义写法 |
 | README 写"84 个 Go 用例"，与实测不符 | 实测 88（86 PASS + 2 SKIP）；已更正并说明口径 |
 | `GlassPolicyTest` 里含 `%` 的测试名触发 Windows 警告 | 改名后 `ui:compileDebugUnitTestKotlin` 无该警告 |
+| `tools/verify_remote.py` 把非 200 一律当"文件缺失"，产出**假失败** | 改用单次 `git/trees` 取全量路径；404 与其他错误分开处理，"无法确定" → `exit 3`。变异测试：真缺失 → MISSING/exit 1；限流 → UNDETERMINED/exit 3（详见第 12 节） |
 
 ---
 
@@ -1174,6 +1175,7 @@ $ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-pu
   - 仓库可见性: private
   - 默认分支: main
   - 许可证: GPL-3.0 (GNU General Public License v3.0)
+  - 关键文件核验方式: tree 取回 374 个路径（单次调用，不受逐路径限流影响）
   - 关键文件: 23/23 存在
   - Release 数: 0
 
@@ -1183,8 +1185,50 @@ $ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-pu
 > 该脚本在无 `GITHUB_TOKEN`/`GH_TOKEN` 时 `exit 3 = SKIP`（**不是通过**）。
 > 本次是带 token 运行的结果；CI 上没有 token 时这一步会 SKIP，属预期。
 
+- 推送结果：`925a9ce..dda085c  main -> main`，本地 HEAD 与远程 `refs/heads/main` 一致
+  （`dda085c6b4f5c79fea6458e56cef81e5279f4102`，逐字符比对）
 - `.git/config` 未落盘令牌（`grep -c 'github_pat\|extraheader' .git/config` → 0）
 - Release 数 0 → 自更新链路（18.5）尚不可端到端验证，已登记在 `PENDING-EXTERNAL.md`
+
+### 本轮修掉了这个脚本自己的一个假失败
+
+推送后首次核验得到 `关键文件: 22/23 存在` + `[MISSING] tools/set_owner.sh` + `[REMOTE] FAIL`。
+但该文件**确实在远端**（`GET /repos/.../contents/tools/set_owner.sh` 返回 200，6839 字节，
+与本地一致）。根因是脚本的两处设计缺陷：
+
+1. 它对 23 个关键文件**逐个**发 contents 请求，很容易撞限流；
+2. 它把**任何非 200 都算作"文件缺失"** —— 403（限流）、429、5xx、网络错误
+   全都被报成 MISSING，进而让整个核验 FAIL。
+
+验证脚本报**假失败**比不报还糟：它会把真问题淹没掉，并训练人忽略这个信号。
+
+修法：
+
+- 改用**一次** `GET /git/trees/{branch}?recursive=1` 取回全量路径（23 次请求 → 1 次），
+  tree 被 `truncated` 时不再用它判定缺失；
+- 取不到 tree 才回退到逐路径查询，且此时严格区分三种结果：
+  **200 = 存在**、**404 = 确认缺失（FAIL）**、**其他 = 无法确定**；
+- "无法确定"**既不算通过也不算缺失**，整体判为 `INCONCLUSIVE` 并 `exit 3`
+  （沿用本仓库的 SKIP 约定：没检查 ≠ 检查通过）；
+- 瞬时错误加退避重试（1s / 2s），并且**一旦确认 API 整体不可用就停止逐条重试** ——
+  否则 24 个路径 × 3 次 × 退避会跑好几分钟（实测原实现 >120 s 被超时杀掉）。
+
+修复后两条失败路径都做了变异测试：
+
+```text
+变异 1：把一个不存在的路径加进关键文件表
+  -- 缺失文件（404，确认不存在）--
+    [MISSING] tools/this_file_does_not_exist.sh
+  [REMOTE] FAIL        → exit 1   ✓ 真的缺失仍然报 FAIL
+
+变异 2：让所有 API 调用返回 403（模拟限流）
+  -- 无法确定（非 404，不能当作缺失，也不能当作通过）--
+    [UNDETERMINED] README.md（HTTP 403）
+    [UNDETERMINED] LICENSE（未查询：API 已确认不可用）
+    ...（共 23 条）
+  [REMOTE] INCONCLUSIVE — 核验未完成，**不是通过**
+                       → exit 3   ✓ 不再假报 MISSING，且耗时 8.5 s（原实现 >120 s 超时）
+```
 
 ---
 

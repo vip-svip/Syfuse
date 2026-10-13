@@ -95,27 +95,19 @@ not_implemented() {
 # ============================================================================
 #  1) 安装 / 重装内置 App
 # ============================================================================
+# 版本判断（同版本跳过、设备版本更新时说明）与失败分类都在 apk_install.sh，
+# 与 customize.sh 安装期自动安装复用同一份实现，避免两处漂移。
 do_install_apk() {
   title "1) 安装 / 重装内置 App"
-  apk="$MODDIR/apk/syfuse.apk"
-  if [ ! -f "$apk" ]; then
-    ui_print "  未找到内置 APK：$apk"
-    ui_print ""
-    ui_print "  原因：本版本的模块包**尚未内置 APK**（sidecar）。"
-    ui_print "  内置软件由 package.sh 打包时注入；当前 APK 与内核都未随包交付，"
-    ui_print "  详见 README 的「功能可用性报告」。"
+  if [ ! -f "$MODDIR/apk_install.sh" ]; then
+    ui_print "  ✗ 模块包不完整：缺少 apk_install.sh（安装逻辑的载体）"
+    ui_print "    该文件应随模块 ZIP 提供（package.sh 从 module/ 整体拷贝）。"
+    ui_print "    请重新打包模块，而不是在这里静默跳过。"
     return 1
   fi
-  ui_print "  正在安装 $apk …"
-  if command -v pm >/dev/null 2>&1; then
-    if pm install -r "$apk"; then
-      ui_print "  安装完成。"
-    else
-      ui_print "  安装失败（退出码 $?）。"
-    fi
-  else
-    ui_print "  pm 不可用，无法安装。"
-  fi
+  . "$MODDIR/apk_install.sh"
+  syfuse_install_apk "$MODDIR"
+  return $?
 }
 
 # ============================================================================
@@ -197,7 +189,7 @@ do_status() {
   hr
   # 逐项如实标注能力状态。**不写"正常"来蒙混** ——
   # 用户看到的就是真实状态，没有的部分明说。
-  ui_print "  内置 APK      : $([ -f "$MODDIR/apk/syfuse.apk" ] && echo 已内置 || echo '未内置（M14 随包）')"
+  ui_print "  内置 APK      : $([ -f "$MODDIR/apk/syfuse.apk" ] && echo 已内置 || echo '未内置（本模块包未注入）')"
   ui_print "  内核二进制    : $([ -x "$MODDIR/bin/syfused-$ARCH" ] && echo 已内置 || echo '未内置（M3）')"
   ui_print "  代理内核      : 未接入，无法代理流量（M3）"
   ui_print "  系统证书      : 未实现（M8）"

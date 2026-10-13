@@ -87,20 +87,24 @@ else
   pend "内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 UdsDataPlane（走 UDS 连真实守护进程），但 proxies.start 仍未实现，不得对外声称代理可用"
 fi
 
-# 内核未接入时，绑定必须**如实**。判据有两条，缺一不可：
-#   1. EngineModule 绑定的是走真实通道的 UdsDataPlane（而不是空壳占位）；
-#   2. proxies.start 仍被登记为待实现方法（守护进程会如实回"尚未实现（计划里程碑 M3）"）。
-# 只看 1 会漏掉"绑定了一个假装能起隧道的实现"；
-# 只看 2 会漏掉"界面根本没接上通道，只是恰好也没谎报"。
+# 内核未随包接入时，引擎绑定必须**如实**：走真实 UDS 通道（UdsDataPlane），
+# 而不是空壳占位 —— 否则界面拿不到控制通道，或拿到一个假装能起隧道的实现。
+# （第 6 轮起 proxies.start 已真实现：诚实性改由更强的判据守着 ——
+#   daemon-protocol 的契约测试断言"start 应答 running 且 socksAddr 真的可连"，
+#   那条测试红 = 隧道谎报，比"查待实现表"严得多。）
 if grep -q "UdsDataPlane" engine/src/main/kotlin/io/github/vipsvip/syfuse/engine/EngineModule.kt 2>/dev/null; then
   pass "EngineModule 绑定 UdsDataPlane（走 UDS 连真实守护进程）"
 else
   fail "EngineModule 未绑定 UdsDataPlane —— 界面拿不到真实控制通道"
 fi
-if grep -q '"proxies.start" to "M3"' daemon-protocol/src/main/kotlin/io/github/vipsvip/syfuse/daemon/DaemonProtocol.kt 2>/dev/null; then
-  pass "proxies.start 仍登记为待实现（M3），隧道不会被谎报为已连接"
+if grep -q '"proxies.start"' daemon-protocol/src/main/kotlin/io/github/vipsvip/syfuse/daemon/DaemonProtocol.kt 2>/dev/null; then
+  if grep -q "proxies_start" daemon-protocol/src/test/kotlin/io/github/vipsvip/syfuse/daemon/DaemonWireRoundTripTest.kt 2>/dev/null; then
+    pass "proxies.start 已真实现且有真实隧道往返用例守着诚实性（running + socksAddr 可连）"
+  else
+    fail "proxies.start 已实现但缺少真实隧道往返用例 —— 无法证明不是谎报"
+  fi
 else
-  fail "proxies.start 不在待实现表里 —— 若隧道已真正实现，请同步更新本检查；否则存在谎报已连接的风险"
+  fail "proxies.start 未在 DaemonProtocol.kt 登记为已实现方法"
 fi
 
 if src_grep 'https?://[^"]*(umeng|bugly|crashlytics|sentry|firebase|appsflyer|adjust\.com)' $SRC_DIRS | grep -q .; then

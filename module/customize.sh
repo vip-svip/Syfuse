@@ -48,6 +48,33 @@ else
   ui_print "  本模块包只包含骨架。**这不代表代理可用**，详见 README。"
 fi
 
+# ---------- 内置 APK 自动安装 ----------
+# 用户明确要求：安装模块时自动安装内置 App。
+#
+# 位置有讲究：放在数据目录/清单创建**之前**。安装失败时以非零码收尾，
+# 安装器会中止并移除模块；放在这里可以保证中止时没有留下半截安装状态
+# （否则会在 /data/adb/syfuse 里留下指向已删模块目录的孤儿清单）。
+#
+# 实现收敛在 module/apk_install.sh —— action.sh 菜单 1（手动重装）复用
+# 同一份逻辑，避免两处实现漂移。
+# 找不到 APK 只警告不中止：骨架包（未注入 APK）仍然是可以安装的，
+# 更重要的是不能让"App 没装上"把整个模块安装拖失败。
+if [ -f "$MODDIR/apk_install.sh" ]; then
+  . "$MODDIR/apk_install.sh"
+  if ! syfuse_install_apk "$MODDIR"; then
+    ui_print "- 内置 App 安装失败（原因见上），本次模块安装以失败收尾。"
+    ui_print "  修掉上面的原因后可重新刷入模块；模块内置 App 也可稍后通过"
+    ui_print "  action.sh 菜单「1) 安装 / 重装内置 App」单独安装。"
+    exit 1
+  fi
+else
+  # 模块包组装不完整：宁可安装失败，也不静默跳过 App 安装
+  ui_print "- ✗ 模块包不完整：缺少 apk_install.sh（内置 App 安装逻辑的载体）"
+  ui_print "  该文件应随模块 ZIP 一起提供（由 package.sh 从 module/ 整体拷贝）。"
+  ui_print "  缺失说明打包出了问题 —— 不静默跳过，请重新打包后刷入。"
+  exit 1
+fi
+
 # ---------- 数据目录 ----------
 mkdir -p "$DATA_DIR" "$MANIFEST_DIR" "$DATA_DIR/log" "$DATA_DIR/rules" \
          "$DATA_DIR/cert" "$DATA_DIR/backup" "$DATA_DIR/profiles" 2>/dev/null
@@ -133,5 +160,6 @@ for s in "$MODDIR"/*.sh; do
 done
 
 ui_print "- 安装完成。"
-ui_print "  提示：本版本内核与 APK 均未随包交付，代理功能不可用。"
+ui_print "  内置 App 的安装结果见上方对应行（已安装 / 同版本跳过 / 未随包）。"
+ui_print "  注意：代理内核尚未接入数据面，代理功能当前不可用（详见 README「功能可用性报告」）。"
 ui_print "  运行 action.sh（模块管理器的「动作」按钮）可查看逐项状态与自检。"

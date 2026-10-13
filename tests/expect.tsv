@@ -45,3 +45,194 @@ host	bad.test	other	-	-	none	none	$badfilter 关闭同形规则（含自身）
 host	deny.test	other	-	-	allow	normal-allow	$denyallow 例外规则在未列出的域名上生效
 host	blocked.deny.test	other	-	-	none	none	$denyallow 列出的域名被排除在本规则之外
 host	unrelated.test	other	-	-	none	none	完全未命中 → 默认放行
+#
+# ---- 域名锚定：子域 / 大小写 / 末尾点 ----
+host	x.y.block-a.test	other	-	-	block	normal-block	域名锚定：多级子域命中
+host	BLOCK-A.TEST	other	-	-	block	normal-block	域名锚定：匹配大小写不敏感
+host	block-a.test.	other	-	-	block	normal-block	域名锚定：末尾点（FQDN）被规范化
+#
+# ---- 例外放行：子域 / 大小写 / URL 请求 ----
+host	sub.x.allow-a.test	other	-	-	allow	normal-allow	例外放行：多级子域同样放行
+host	ALLOW-A.TEST	other	-	-	allow	normal-allow	例外放行：大小写不敏感
+host	x.allow-b.test	other	-	-	allow	important-allow	@@ 叠加 $important：子域同样最高优先级放行
+url	https://allow-a.test/a.js	script	-	-	allow	normal-allow	例外规则对 URL 请求同样放行
+#
+# ---- 优先级裁决矩阵（语料 03：普通/重要 × 放行/拦截 全组合）----
+host	prio-aa.test	other	-	-	allow	normal-allow	普通放行 > 普通拦截
+host	prio-bb.test	other	-	-	block	important-block	重要拦截 > 普通拦截
+host	prio-cc.test	other	-	-	allow	important-allow	重要放行 > 普通放行
+host	prio-dd.test	other	-	-	allow	important-allow	重要放行 > 重要拦截
+host	prio-ee.test	other	-	-	block	important-block	重要拦截 > 普通放行
+host	prio-ff.test	other	-	-	allow	important-allow	重要放行 > 普通拦截
+host	order-a.test	other	-	-	allow	normal-allow	规则顺序不影响同优先级裁决
+host	combo-a.test	other	-	-	block	important-block	$badfilter 签名不同仅抵消自身，$important 规则仍生效
+#
+# ---- 域名锚定边界（语料 03）----
+host	bound-a.test	other	-	-	block	normal-block	域名锚定边界：普通命中
+host	bound-b.test	other	-	-	block	important-block	域名锚定边界：$important 提升
+host	bound-c.test	other	-	-	block	normal-block	域名锚定边界：普通命中
+host	label-a.test	other	-	-	block	normal-block	标签级匹配：自身命中
+host	labela.test	other	-	-	none	none	标签级防护：labela.test 不得命中 label-a.test
+host	deep-a.test	other	-	-	block	normal-block	多级子域：自身命中
+host	a.b.c.deep-a.test	other	-	-	block	normal-block	多级子域：四级子域命中
+host	deep-b.test	other	-	-	block	normal-block	多级子域：自身命中
+#
+# ---- URL 与路径锚定：查询串 / 协议 / userinfo / 子域 / 路径边界 ----
+url	https://cdn.test/js/tracker.js?v=1	script	-	-	block	normal-block	精确 URL：查询串不破坏前缀锚定
+url	http://cdn.test/js/tracker.js	script	-	-	none	none	精确 URL：协议不符不命中
+url	https://user:pass@cdn.test:8443/js/tracker.js	script	-	-	none	none	精确 URL：userinfo/端口使前缀锚定落空
+url	https://sub.path-a.test/ads/x.js	script	-	-	block	normal-block	域名锚定+路径：子域同样命中
+url	https://path-a.test/ads/	script	-	-	block	normal-block	域名锚定+路径：目录本身命中
+url	https://path-a.test/adsx/y.js	script	-	-	none	none	路径边界：/ads/ 不命中 /adsx/
+#
+# ---- 正则规则：可选段 / 位数要求 ----
+url	https://site.test/adbanner7/x	script	-	-	block	normal-block	正则：ads?banner 的可选段 s 缺省仍命中
+url	https://site.test/adsbanner/x	script	-	-	none	none	正则：\d+ 要求至少一位数字
+url	https://site.test/adxBanner1/x	script	-	-	none	none	正则：adxBanner 不是 banner
+#
+# ---- 通配符：无锚定子串 / 子域 / URL 请求 ----
+host	xwild-a.com	other	-	-	block	normal-block	通配符无锚定：任意位置子串命中
+url	https://wild-a.com/page	script	-	-	block	normal-block	通配符：URL 请求命中
+url	https://www.wild-a.com/page	script	-	-	block	normal-block	通配符：子域命中
+#
+# ---- $match-case：大小写敏感 / 后缀越界 / 裸域名 ----
+url	https://CaseSensitive.test/x	script	-	-	block	normal-block	$match-case：大小写完全一致命中
+url	https://casesensitive.test/x	script	-	-	none	none	$match-case：小写写法不命中
+url	https://sub.CaseSensitive.test/x	script	-	-	block	normal-block	$match-case：子域命中
+url	https://CaseSensitive.test.evil.test/x	script	-	-	none	none	$match-case：后缀越界不命中
+host	CaseSensitive.test	other	-	-	none	none	$match-case 退化正则要求 ://，裸域名查询不命中
+host	casesensitive.test	other	-	-	none	none	$match-case：裸域名查询不命中（小写同理）
+#
+# ---- $domain 作用域：包含 / 排除 / 多值 / 混合 / 无文档域名 ----
+host	scoped.test	other	sub.site-a.test	-	block	normal-block	$domain 包含：文档域名的子域同样包含
+host	scoped.test	other	-	-	none	none	$domain 包含式：无文档域名时不适用
+host	scoped-ex.test	other	-	-	block	normal-block	$domain 排除式：无文档域名时适用
+host	multi.test	other	site-a.test	-	block	normal-block	$domain 多值：第一个包含项
+host	multi.test	other	site-b.test	-	block	normal-block	$domain 多值：第二个包含项
+host	multi.test	other	site-c.test	-	none	none	$domain 多值：未列出的文档域名不适用
+host	multi.test	other	-	-	none	none	$domain 多值：无文档域名时不适用
+host	mixed.test	other	site-b.test	-	block	normal-block	$domain 混合：包含项命中
+host	mixed.test	other	excl.test	-	none	none	$domain 混合：排除项生效
+host	mixed.test	other	other.test	-	none	none	$domain 混合：未在包含项中不适用
+host	mixed.test	other	-	-	none	none	$domain 混合：无文档域名时不适用
+#
+# ---- 资源类型：typed / typed-all / rt-* 逐个 / xhr 别名 / $all ----
+host	typed.test	document	-	-	none	none	资源类型：document 不匹配 $script 规则
+host	typed.test	other	-	-	none	none	资源类型：other 不匹配 $script 规则
+url	https://typed.test/a.js	script	-	-	block	normal-block	资源类型：URL 请求按类型命中
+url	https://typed.test/a.js	image	-	-	none	none	资源类型：URL 请求类型不符不命中
+host	typed-all.test	script	-	-	block	normal-block	未限定类型：script 命中
+host	typed-all.test	document	-	-	block	normal-block	未限定类型：document 命中
+host	typed-all.test	other	-	-	block	normal-block	未限定类型：other 命中
+host	rt-doc.test	document	-	-	block	normal-block	$document 规则命中 document 请求
+host	rt-doc.test	script	-	-	none	none	$document：类型不符不适用
+host	rt-sub.test	subdocument	-	-	block	normal-block	$subdocument 规则命中
+host	rt-script.test	script	-	-	block	normal-block	$script 规则命中
+host	rt-script.test	image	-	-	none	none	$script：类型不符不适用
+host	rt-image.test	image	-	-	block	normal-block	$image 规则命中
+host	rt-style.test	stylesheet	-	-	block	normal-block	$stylesheet 规则命中
+host	rt-xhr.test	xmlhttprequest	-	-	block	normal-block	$xmlhttprequest 规则命中
+host	rt-xhr.test	xhr	-	-	block	normal-block	xhr 是 xmlhttprequest 的别名（两侧同接受）
+host	rt-ws.test	websocket	-	-	block	normal-block	$websocket 规则命中
+host	rt-webrtc.test	webrtc	-	-	block	normal-block	$webrtc 规则命中
+host	rt-ping.test	ping	-	-	block	normal-block	$ping 规则命中
+host	rt-object.test	object	-	-	block	normal-block	$object 规则命中
+host	rt-media.test	media	-	-	block	normal-block	$media 规则命中
+host	rt-font.test	font	-	-	block	normal-block	$font 规则命中
+host	rt-mp4.test	mp4	-	-	block	normal-block	$mp4 规则命中
+host	rt-popup.test	popup	-	-	block	normal-block	$popup 规则命中
+host	rt-other.test	other	-	-	block	normal-block	$other 规则命中
+host	rt-all.test	script	-	-	block	normal-block	$all 展开：script 命中
+host	rt-all.test	popup	-	-	block	normal-block	$all 展开：popup 命中
+host	rt-all.test	other	-	-	block	normal-block	$all 展开：other 命中
+#
+# ---- $denyallow：资源类型 / 子域 / 列出域名的子域 ----
+host	deny.test	image	-	-	allow	normal-allow	$denyallow 例外：换资源类型仍放行
+host	sub.deny.test	other	-	-	allow	normal-allow	$denyallow 例外：子域同样放行
+host	x.blocked.deny.test	other	-	-	none	none	$denyallow：列出域名的子域也被排除
+#
+# ---- hosts 族：黑洞 / 重写 / 子域 / 多主机名 / IPv6 ----
+host	sub.hosts-a.test	other	-	-	block	normal-block	hosts 黑洞：子域命中
+host	host-zero.test	other	-	-	block	normal-block	hosts 0.0.0.0 拦截（语料 04）
+host	host-loop.test	other	-	-	block	normal-block	hosts 127.0.0.1 拦截
+host	host-v6any.test	other	-	-	block	normal-block	hosts :: 黑洞拦截
+host	host-v6loop.test	other	-	-	block	normal-block	hosts ::1 黑洞拦截
+host	sub.host-v6any.test	other	-	-	block	normal-block	hosts IPv6 黑洞：子域命中
+host	host-rw-a.test	other	-	-	rewrite	normal-block	hosts 1.2.3.4 → 解析重写
+host	host-rw-b.test	other	-	-	rewrite	normal-block	hosts 9.9.9.9 → 解析重写
+host	sub.host-rw-a.test	other	-	-	rewrite	normal-block	hosts 重写：子域同样重写
+host	host-multi.test	other	-	-	block	normal-block	hosts 一行多主机名：第一个域名生效
+host	host-multi2.test	other	-	-	block	normal-block	hosts 一行多主机名：第二个域名同样生效
+url	https://hosts-a.test/x	script	-	-	block	normal-block	hosts 规则对 URL 请求同样拦截
+url	https://host-rw-a.test/x	script	-	-	rewrite	normal-block	hosts 重写规则对 URL 请求同样生效
+#
+# ---- dnsmasq 三种形态（语料 04）----
+host	dq-a.test	other	-	-	block	normal-block	dnsmasq address=/d/ 拦截
+host	dq-b.test	other	-	-	rewrite	normal-block	dnsmasq address=/d/ip 重写
+host	dq-c.test	other	-	-	rewrite	normal-block	dnsmasq local=/d/ 本地应答
+host	dq-d.test	other	-	-	rewrite	normal-block	dnsmasq server=/d/ip 指定上游（表现为重写）
+#
+# ---- IPv4 网段：基址 / 上界 / 越界 / /12 / /24 / URL 请求 ----
+host	10.10.0.0	other	-	-	block	normal-block	IPv4 网段：10.10.0.0/16 基址命中
+host	10.10.255.255	other	-	-	block	normal-block	IPv4 网段：/16 上界命中
+host	10.11.0.0	other	-	-	none	none	IPv4 网段：下一网段不命中
+host	10.20.0.0	other	-	-	block	normal-block	IPv4 网段：10.20.0.0/16 基址
+host	10.20.255.255	other	-	-	block	normal-block	IPv4 网段：10.20.0.0/16 上界
+host	10.21.0.0	other	-	-	none	none	IPv4 网段：10.21.0.0 越界
+host	192.168.50.0	other	-	-	block	normal-block	IPv4 网段：192.168.50.0/24 基址
+host	192.168.50.255	other	-	-	block	normal-block	IPv4 网段：/24 上界
+host	192.168.51.0	other	-	-	none	none	IPv4 网段：/24 外不命中
+host	172.16.0.0	other	-	-	block	normal-block	IPv4 网段：172.16.0.0/12 基址
+host	172.31.255.255	other	-	-	block	normal-block	IPv4 网段：/12 上界
+host	172.32.0.0	other	-	-	none	none	IPv4 网段：/12 外不命中
+url	http://10.10.5.5/x	other	-	-	block	normal-block	IPv4 网段：URL 请求提取主机后命中
+url	http://11.10.5.5/x	other	-	-	none	none	IPv4 网段：URL 请求越界不命中
+url	http://192.168.50.7/x	script	-	-	block	normal-block	IPv4 网段：URL 请求 /24 命中
+#
+# ---- 修饰符动作族：removeparam / redirect / csp / permissions / header / cookie / dnsrewrite / empty ----
+host	tracked.test	other	-	-	block	normal-block	$removeparam：拦截语义不变
+url	https://tracked.test/x?utm_source=1	script	-	-	block	normal-block	$removeparam：带参 URL 命中
+host	tracked2.test	other	-	-	block	normal-block	$removeparam=fbclid 命中
+host	tracked3.test	other	-	-	block	normal-block	$removeparam 无值：去掉全部参数
+host	adframe.test	other	-	-	rewrite	normal-block	$redirect=noop.js → 重写动作
+host	adframe2.test	other	-	-	rewrite	normal-block	$redirect=noopjs → 重写动作
+url	https://adframe.test/f.js	script	-	-	rewrite	normal-block	$redirect：URL 请求同样重写
+host	csp.test	other	-	-	block	normal-block	$csp：动作仍为拦截
+host	perm.test	other	-	-	block	normal-block	$permissions：动作仍为拦截
+host	header.test	other	-	-	block	normal-block	$header：动作仍为拦截
+host	cookie.test	other	-	-	block	normal-block	$cookie：动作仍为拦截
+host	dnsrw.test	other	-	-	rewrite	normal-block	$dnsrewrite=1.2.3.4 → 重写动作
+host	emptyres.test	other	-	-	rewrite	normal-block	$empty → 重写动作
+url	https://emptyres.test/x.js	script	-	-	rewrite	normal-block	$empty：URL 请求同样重写
+#
+# ---- $method：一致 / 不符 / 缺失 / 否定写法 ----
+host	method.test	other	-	POST	block	normal-block	$method=POST：方法一致命中
+host	method.test	other	-	GET	none	none	$method=POST：方法不符不适用
+host	method.test	other	-	-	none	none	$method=POST：无方法信息不适用
+host	method2.test	other	-	GET	none	none	$method=~GET：否定写法未实现，按字面不匹配
+host	method2.test	other	-	POST	none	none	$method=~GET：否定写法未实现，任何方法都不匹配
+host	method2.test	other	-	~GET	block	normal-block	$method=~GET：仅字面方法名 ~GET 匹配（否定语义待实现）
+#
+# ---- $3p / $1p：语料表不承载 thirdParty 维度 ----
+host	thirdparty.test	other	-	-	block	normal-block	$3p：请求未标注第三方时规则仍适用
+host	firstparty.test	other	-	-	block	normal-block	$1p：请求未标注时规则仍适用
+host	thirdparty.test	other	thirdparty.test	-	block	normal-block	$3p：documentHost 不推导 thirdParty，规则仍适用
+host	thirdparty2.test	other	-	-	block	normal-block	$third-party 与 $3p 同义
+host	firstparty2.test	other	-	-	block	normal-block	$first-party 与 $1p 同义
+#
+# ---- 未识别修饰符：告警但不静默丢弃 ----
+host	warn2.test	other	-	-	block	normal-block	未识别修饰符 $alsobad：仅告警，规则仍生效
+host	warn3.test	other	-	-	block	normal-block	未识别修饰符 $anotherbad：仅告警，规则仍生效
+#
+# ---- 元素隐藏控制族 vs inline 族 ----
+host	genericblock.test	other	-	-	none	none	$genericblock 属元素隐藏控制，不参与网络拦截
+host	generichide.test	other	-	-	none	none	$generichide 属元素隐藏控制，不参与网络拦截
+host	specifichide.test	other	-	-	none	none	$specifichide 属元素隐藏控制，不参与网络拦截
+host	elemhide.test	other	-	-	none	none	$elemhide 属元素隐藏控制，不参与网络拦截
+host	inlinescript.test	other	-	-	block	normal-block	$inline-script 仍参与网络拦截
+host	inlinefont.test	other	-	-	block	normal-block	$inline-font 仍参与网络拦截
+#
+# ---- $client / $ctag 客户端作用域 ----
+host	client.test	other	-	-	none	none	$client=syfuse：请求无客户端标识 → 不适用
+host	ctag.test	other	-	-	none	none	$ctag=ios：请求无 ctag → 不适用
+host	ctagnot.test	other	-	-	none	none	$ctag=~android：否定语义未实现，字面量匹配失败 → 不适用

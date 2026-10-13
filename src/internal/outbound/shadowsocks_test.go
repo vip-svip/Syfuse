@@ -645,7 +645,7 @@ func TestSsDialerWrongPasswordFailsClosed(t *testing.T) {
 	// 明文漏出去，也不能伪装成空响应。
 	srv := startSSEchoServer(t, "server-side-password", "aes-256-gcm")
 	host, port := srv.hostPort(t)
-	d := &SsDialer{Server: host, Port: port, Password: "client-side-password", Cipher: "aes-256-gcm"}
+	d := &SsDialer{Server: host, Port: port, Password: "client-side-password", Cipher: "aes-256-gcm"} // secretscan:allow 测试夹具
 	c, err := d.DialContext(context.Background(), "tcp", "example.com:443")
 	if err != nil {
 		t.Fatalf("dial: %v", err)

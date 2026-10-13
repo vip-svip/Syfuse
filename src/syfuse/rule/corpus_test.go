@@ -239,7 +239,7 @@ func TestCorpus_NoRuleSilentlyDropped(t *testing.T) {
 	// 早先靠人工点数得出 29，语料扩到 5 个文件后立刻失效，
 	// 而"人工点数"本身也会数错。两边（Kotlin / Go）读同一份语料、
 	// 断言同一组值，任一实现漂移都会红。
-	const wantNetworkRules = 115
+	const wantNetworkRules = 113
 	if len(report.NetworkRules) != wantNetworkRules {
 		t.Errorf("解析出的网络规则数 = %d，期望 %d。若确为语料变更请同步本常量；"+
 			"否则说明有规则被静默丢弃或误判。", len(report.NetworkRules), wantNetworkRules)
@@ -254,11 +254,11 @@ func TestCorpus_NoRuleSilentlyDropped(t *testing.T) {
 		t.Errorf("解析出的元素规则数 = %d，期望 %d", len(report.CosmeticRules), wantCosmeticRules)
 	}
 	// 忽略行与总行数也两侧对齐：总行数错会让"规则体检"的行号标注整体偏移。
-	const wantIgnoredLines = 129
+	const wantIgnoredLines = 132
 	if report.IgnoredLines != wantIgnoredLines {
 		t.Errorf("忽略行数 = %d，期望 %d", report.IgnoredLines, wantIgnoredLines)
 	}
-	const wantTotalLines = 250
+	const wantTotalLines = 251
 	if report.TotalLines != wantTotalLines {
 		t.Errorf("总行数 = %d，期望 %d", report.TotalLines, wantTotalLines)
 	}

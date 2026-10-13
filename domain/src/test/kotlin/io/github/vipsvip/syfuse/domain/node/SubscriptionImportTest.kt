@@ -39,7 +39,7 @@ class SubscriptionImportTest {
 
     @Test
     fun `节点主键不含明文口令`() {
-        val node = ssNode(password = "super-secret-password")
+        val node = ssNode(password = "super-secret-password") // secretscan:allow 测试夹具，非真实凭据
 
         val id = SubscriptionImport.nodeIdOf(node)
 
@@ -271,7 +271,7 @@ class SubscriptionImportTest {
         val sink = NodeMapping.CredentialSink { secret -> "v1:enc:${secret.length}" }
 
         val plan = SubscriptionImport.plan(
-            outcome(ssNode(password = "topsecret")),
+            outcome(ssNode(password = "topsecret")), // secretscan:allow
             existing = emptyList(),
             sourceTag = SubscriptionImport.sourceTag(subUrl),
             credentials = sink,
@@ -284,7 +284,7 @@ class SubscriptionImportTest {
     @Test
     fun `无 sink 时凭据引用为空而不是泄漏明文`() {
         val plan = SubscriptionImport.plan(
-            outcome(ssNode(password = "topsecret")),
+            outcome(ssNode(password = "topsecret")), // secretscan:allow
             existing = emptyList(),
             sourceTag = SubscriptionImport.sourceTag(subUrl),
             credentials = null,

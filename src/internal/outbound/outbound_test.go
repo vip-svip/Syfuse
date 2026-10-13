@@ -545,7 +545,7 @@ func TestTrojanDialerSendsProtocolFrame(t *testing.T) {
 
 	host, port := srv.hostPort(t)
 	d := &TrojanDialer{
-		Server: host, Port: port, Password: "trojan-password",
+		Server: host, Port: port, Password: "trojan-password", // secretscan:allow 测试夹具
 		Insecure: true,
 	}
 	c, err := d.DialContext(context.Background(), "tcp", "93.184.216.34:443")

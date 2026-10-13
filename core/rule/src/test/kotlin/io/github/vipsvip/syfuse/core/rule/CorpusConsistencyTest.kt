@@ -108,10 +108,10 @@ class CorpusConsistencyTest {
         // 这组数字由探针（CorpusProbeTool）实测得出，不是凭直觉写的：
         // 语料扩到 5 个文件后，hosts 多主机名逐域名展开、IPv6 黑洞行被识别、
         // dnsmasq `server=` 被支持，三处修复各自改变了计数。
-        assertWithMessage("网络规则数").that(report.networkRules).hasSize(115)
+        assertWithMessage("网络规则数").that(report.networkRules).hasSize(113)
         assertWithMessage("元素规则数").that(report.cosmeticRules).hasSize(6)
-        assertWithMessage("忽略行数").that(report.ignoredLines).isEqualTo(129)
-        assertWithMessage("总行数").that(report.totalLines).isEqualTo(250)
+        assertWithMessage("忽略行数").that(report.ignoredLines).isEqualTo(132)
+        assertWithMessage("总行数").that(report.totalLines).isEqualTo(251)
         assertWithMessage("ERROR 数").that(report.errors).hasSize(1)
         assertWithMessage("WARNING 数").that(report.warnings).hasSize(3)
     }

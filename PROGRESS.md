@@ -61,17 +61,16 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 6 轮（2026-10-13）已把**用户唯一能感知的核心闭环打通**：
-`proxies.start` 经 UDS 驱动真实引擎，建出本地 SOCKS5 入站隧道并报 running + socksAddr
-（Kotlin ↔ UDS ↔ 守护进程 ↔ 真隧道，28 条真实往返全绿；Go 侧内核门禁 222 用例 0 失败）。
-下一轮第一个动作：**Android VpnService TUN 入站**（M3 最后一块，需真机）——
-在此之前不要声称"设备级代理可用"，沙箱能验的是隧道本身。
-并行进行中的（第 6 轮派出的 4 个 agent，产出必须由主代理亲自复跑验收命令才计入）：
-  ① T6 语料扩容 38 → ≥120 条（`tests/corpus` + `tests/expect.tsv`）
-  ② M6 Go DNS 解析器（`src/internal/dns/`，零第三方依赖）
-  ③ M9 UI 三件套（日志/统计/连接列表，只准新建文件）
-  ④ 模块侧 APK 自动安装（`module/customize.sh`）
-之后进 M7（模块系统 + QuickJS）与 M8（MITM 抓包）。
+NEXT_ACTION: 第 7 轮（2026-10-13）把 11 个并行 agent 被 429 限流打断的
+半成品全部亲自验收/修复/补齐并提交推送（dd74798）：
+  ① M6 DNS 落盘并全绿（修空域名缺陷）；② M9 内核侧 internal/conn 补齐
+（11 用例，connections/traffic 数据源就绪）；③ 语料 47→238 行两侧全绿
+（T6 完成）；④ M9 UI 三页编译过（修 @EntryPoint/@InstallIn）；
+⑤ 模块 APK 自动安装过门禁；⑥ M8 起步 internal/mitm/ca.go 落盘（待测试）。
+下一轮第一个动作：**M9 UDS 接线** —— connections/traffic 两个方法接
+conn.Tracker（main.go 待实现表 → 真实现，Kotlin PENDING 表同步，契约测试红绿判据），
+之后补 mitm/ca.go 测试（issue/hosts/mobileconfig/pin + 18 条用例）。
+注意：子代理 429 限流至 2026-10-14 16:24 UTC+8，期间大单元由主代理自做。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）  
 ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2  
 （已在 PENDING-EXTERNAL.md 第 5 节写清"缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果"）  
@@ -90,13 +89,66 @@ ROUND_TIME: 第 5 轮 ≈3h40m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min �
 子代理尝试 T4/T6 约 30 min 后确认零产出并终止）  
 UNIT: 第 5 轮交付 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 12 组等价性矩阵）；  
 **T4/T6 未交付**（子代理零产出，已拆成 T4a/b/c 并改为主代理自做）  
-LAST_UPDATED: 2026-10-13T12:55Z (2026-10-13 20:55 +0800)
+LAST_UPDATED: 2026-10-13T21:55Z (2026-10-13 21:55 +0800)
 
 ```
 
 ---
 
-## 第 6 轮（2026-10-13）实际做了什么
+## 第 7 轮（2026-10-13）实际做了什么
+
+本轮主线：11 个并行 agent 因 **429 限流全部中途死亡**（额度次日 16:24 才重置），
+把每个 agent 留下的半成品**逐一亲自验收、修复、补齐**，不接受任何自证。
+
+1. **核心切片先行提交**（`4fe14fb`，45 文件 +7235 行）：第 6 轮的隧道闭环
+   （dataplane/tunnel/engine/proxies.*）以显式路径提交，明确排除 agent 领地。
+
+2. **派出 6+1 个新 agent**（M7a 模块系统 / M7b goja 引擎 / M8a MITM CA /
+   M9a 连接跟踪 / M12a 防泄漏 Go / M10 语法调研 / M12b 防泄漏 Kotlin）——
+   全部死于同一波 429。留下产出的：conn（tracker.go 264 行缺类型）、
+   mitm（ca.go 336 行零测试）；其余零产出。**结论再次验证**：关键路径
+   产出必须主代理自己做（与第 5 轮第 10 条一致）。
+
+3. **M6 DNS 验收**：`go test ./internal/dns/` 22 条过 2 条红
+   （`NewHosts(":1.2.3.4")` 空域名没报错）。根因：`normalizeName("")`
+   返回根域 `"."` 且不报错（根查询本身合法），但 hosts 条目映射到根域
+   既无意义也会劫持根查询。修复后 **24 条全绿**。gofmt 一处。
+
+4. **M9 内核侧补齐**：agent 只写了 tracker.go（264 行），Record/ConnInfo/
+   Stats/SystemClock 四个类型缺失编译不过。主代理按冻结 API 补
+   record.go/clock.go + 11 条用例（JSON 字段名黄金值防漂移、并发 1000、
+   环带淘汰、幂等 Close）。注：沙盒无 C 编译器，`-race` 不可用，已记录。
+
+5. **T6 语料扩容验收**：expect.tsv 47→238 行，但两侧都红 ——
+   语料 agent 把**边界探针**（`10.21.0.0` 越界测试）误写成规则行，
+   裸 IP 被解析成 /32 规则反而拦截。修法：探针只留在 expect.tsv 的
+   input 列，规则文件里加注释说明为什么；同步两侧硬编码计数常量
+   （113/132/251）。修完 **Go + Kotlin 189 条期望逐条全绿**。
+
+6. **M9 UI 三页验收**：`:app:assembleDebug` 红 ——
+   `@EntryPoint` 写成了 `dagger.hilt.android.EntryPoint`（实际在
+   `dagger.hilt` 包；EntryPointAccessors 才在 android 子包，从报错行号
+   正好可以反推），KSP 再要求 `@InstallIn(SingletonComponent::class)`。
+   两处修完 **BUILD SUCCESSFUL**。
+
+7. **模块 APK 自动安装验收**：customize.sh 安装期自动装 + action.sh 菜单
+   复用同一份 `apk_install.sh`（版本判断/失败分类单点实现，避免两处漂移）。
+   module-checks 暴露 2 个 FAIL：密钥扫描 5 处测试夹具命中（行内
+   `secretscan:allow` 显式豁免，可 grep 复核）；门禁断言"proxies.start
+   仍在待实现表"已过时（第 6 轮真实现了）—— 诚实性判据升级为
+   "必须有真实隧道往返用例（running + socksAddr 可连）"。
+   修完 **PASS=109 FAIL=0**。
+
+8. **全量收口证据**（主代理亲跑）：kernel-checks **PASS 用例=239 失败=0**
+   （222→239）、:domain:test / :core:rule:test 全绿、:app:assembleDebug
+   成功、secrets PASS（豁免 28 条）。提交 `dd74798`（27 文件 +4974 行），
+   推送 `a90846b..dd74798`。
+
+9. **M8 起步**：`src/internal/mitm/ca.go`（336 行：CA 生成/SPKI 指纹/
+   .crt/.pem 导出）可编译落盘，**尚无测试** —— 下轮补 issue/hosts/
+   mobileconfig/pin + 18 条用例后才计 M8 进度。
+
+
 
 本轮主线只有一件事：**把"用户选了节点、点了连接，流量真的流出去"这条闭环打通**。
 起因是用户反复说"连个半成品都不是"——界面能点连接，但 `proxies.start` 一路如实返回

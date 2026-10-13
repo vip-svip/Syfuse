@@ -212,9 +212,11 @@ class SubscriptionTest {
         val p = NodeMapping.toProxyNode(
             n,
             id = "n1",
-            credentials = NodeMapping.CredentialSink { key, secret ->
-                // 真正的实现会把它写进加密容器并返回引用
-                "vault:${key.hashCode()}:${secret.length}"
+            credentials = NodeMapping.CredentialSink { secret ->
+                // 真正的实现会把它写进加密容器并返回引用。
+                // 注意：签名里**没有** node key —— key 含明文口令，
+                // 把它递进来就是在诱导实现者把明文编进引用（见 CredentialSink 注释）。
+                "vault:${secret.length}"
             },
         )
 

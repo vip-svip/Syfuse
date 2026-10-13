@@ -31,10 +31,20 @@ object NodeMapping {
      *
      * 刻意做成接口而不是"直接返回明文"：让**唯一**能把明文写进加密容器的地方
      * 有明确的名字，审计时只需要看这一个实现。
-     * 签名接收节点 key（稳定标识）与明文凭据，返回 `credentialRef`。
+     *
+     * ## 签名为什么只收 secret，不收节点 key
+     *
+     * 早期签名是 `store(nodeKey: String, secret: String)`。这是个**陷阱**：
+     * [ShareNode.key] 的拼接式里**含明文口令**（"同服务器同端口但密码不同是
+     * 两个不同节点"），而一个图省事的实现会顺手把 nodeKey 编进返回值里
+     * "方便排障" —— 于是明文口令连加密都没过就落进了普通文本列，R5 整条作废。
+     *
+     * 我的第一版实现正是这么写的（`"v1:fake:$key:..."`），被测试当场抓出来。
+     * 与其在注释里叮嘱"别回显 key"，不如**把 key 从签名里去掉**：
+     * 需要按节点区分别名时，实现方用自己的 id 派生，不需要调用方递钥匙。
      */
     fun interface CredentialSink {
-        fun store(nodeKey: String, secret: String): String
+        fun store(secret: String): String
     }
 
     /** [ShareNode] → [ProxyNode]。 */
@@ -46,7 +56,7 @@ object NodeMapping {
     ): ProxyNode {
         val secret = if (node.uuid.isNotEmpty()) node.uuid else node.password
         val ref = if (secret.isNotEmpty() && credentials != null) {
-            credentials.store(node.key(), secret)
+            credentials.store(secret)
         } else {
             null
         }

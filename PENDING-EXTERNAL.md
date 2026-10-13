@@ -120,7 +120,36 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 
 ---
 
-## 5. 本轮未能执行的其余检查（同属「待外部验证」）
+## 5. 无 gomobile + NDK（内核宿主 AAR 无法构建）
+
+**缺什么**：`gomobile` 工具链与 Android NDK（`ANDROID_NDK_HOME`）。
+
+**为什么需要**：M3 的「内核宿主」要把 Go 侧的隧道实现编成 AAR 供 App 静态链接
+（提示词 9.2 的内核策略：**不运行时下载内核**）。没有 gomobile + NDK，
+`src/tools/build_aar.sh` 只能做前置检查后如实 `exit 2`（缺工具链），
+于是 `proxies.start` 保持"尚未实现"、T1/T2/T3 三个单元全部受阻。
+
+**怎么补**：
+
+```bash
+go install golang.org/x/mobile/cmd/gomobile@latest
+go install golang.org/x/mobile/cmd/gobind@latest
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<版本>"   # 或 sdkmanager "ndk;<版本>"
+gomobile init
+```
+
+**补齐后跑**：`bash src/tools/build_aar.sh`
+
+**期望结果**：`kernel/out/*.aar` 产出，且 `unzip -l` 里能看到
+`jni/<abi>/libsyfuse.so`（arm64-v8a / armeabi-v7a / x86_64 三个 ABI）。
+之后按 `PROGRESS.md` 的 `NEXT_ACTION` 接 T2（Go 侧 `proxies.*` 真实现）→ T3。
+
+> 这一项与第 1 项不同：它是**主机工具链缺口**，补齐后不需要真机即可验证
+> 「AAR 构建 + 静态链接 + 最小代理链路」；只有隧道真的跑流量时才需要设备。
+
+---
+
+## 6. 本轮未能执行的其余检查（同属「待外部验证」）
 
 | 检查 | 阻塞原因 | 补齐条件 |
 |---|---|---|
@@ -130,5 +159,5 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 | `tests/run_kernel.sh`（隧道吞吐、冷启动） | 无设备 | 同第 1 项 |
 | M4–M13 全部功能 | 代码未实现（不是外部阻塞） | 见 `PROGRESS.md` 的 `NEXT_ACTION` |
 
-> 第 5 项中"M4–M13 代码未实现"**不是外部阻塞**，是本项目的正常进度，
+> 第 6 项中"M4–M13 代码未实现"**不是外部阻塞**，是本项目的正常进度，
 > 已按里程碑登记在 `PROGRESS.md`，不在此处重复计入。

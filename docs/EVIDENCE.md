@@ -3,10 +3,14 @@
 > 提示词 2.9 / 2.10 第 6 条：**证据必须落盘**，不能只活在聊天里。
 > 本文件的每一段都是命令的**原始输出**（未改写、未摘要），可直接复现。
 >
-> - 采集时间：2026-10-13T04:35:00Z（第 4 轮重采）
+> - 采集时间：2026-10-13T05:05:00Z（第 5 轮重采，T0 门禁重同步之后）
 > - 采集环境：Windows 10 / JDK 21.0.12.1+1 / Go 1.23.4 / Gradle 8.11.1 / Android SDK platform-35 + build-tools 35.0.0
-> - 采集时 HEAD：``（即本文件所在提交）
-> - 提示词文件：**157194 字节 / 2205 行**（第 3 轮时为 146185 字节 / 2098 行 —— **文件已被更新**，新增 2.11 提速规范与 2.11-I 安全红线；这一变化直接导致本文件 §14 记录的门禁脚本不一致）
+> - 采集时 HEAD：`8928de6`（`feat(m3): 内核宿主打通——规则引擎 Go 移植 + 真实控制通道`）
+> - 提示词文件：**170504 字节 / 1985 行**（`sha256 4b9fb13b…`）。
+>   该文件在本项目期间**被改过三次**：146185 B / 2098 行 → 157194 B / 2205 行 → **170504 B / 1985 行**。
+>   前两次变化是新增 2.11 提速规范与 2.11-I 安全红线；第三次把附录从纯文本代码块改成
+>   **base64 + 自带声明字节数**，并给两个门禁脚本各加了内容（含整个第 ⑦ 组）。
+>   因此**每次动手前都必须重新比对附录**，§14 记录了本轮的比对与重同步全过程。
 > - `adb devices`：**空**（无真机 → 所有设备类检查 `exit 3 = SKIP`，SKIP 不是通过）
 
 ---
@@ -15,9 +19,10 @@
 
 | 检查 | 退出码 | 结论 |
 |---|---|---|
-| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项）—— **但见 §14：门禁脚本与附录不一致，此结论不完整** |
-| 交付门禁（README.md） | **0** | 全部通过（WARN 2 项），需求项 36 条缺失 0 条 —— **附录实为 38 条，见 §14** |
-| `tools/scan_secrets.py` | **0** | PASS — 无禁止项（WARN 25 条，豁免 19 条） |
+| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项） |
+| 交付门禁（README.md，`.sh` 与 `.ps1` 两版） | **0** | 两版均「全部通过（WARN 2 项）」，**需求项 38 条缺失 0 条**、第 ⑥ 组列出 28 个脚本 × 2 条断言全 PASS。原始输出见 §14.6 |
+| `tests/run_appendix_sync.sh`（新增） | **0** | PASS=8 FAIL=0 —— 附录 A/B/C 与 `tools/` 的偏差**逐字等于**已登记勘误；两个变异测试均正确报 FAIL，见 §14.7 |
+| `tools/scan_secrets.py` | **0** | PASS — 无禁止项（WARN 32 条，豁免 19 条；其中 19 条是本文件的自引用，见 §3 的说明） |
 | `tests/run_unit.sh`（JVM 单测） | **0** | **5 模块 / 15 套件 / 126 用例 / 失败 0 / 错误 0 / 跳过 1** |
 | `cd src && go test ./...` | **0** | 4 包全绿；**127 用例 / 0 失败** |
 | `tests/run_module_checks.sh` | **0** | PASS=109 FAIL=0 PEND=1 |
@@ -131,6 +136,12 @@
 
 ## 2. 交付门禁（README.md —— 门禁的正确目标）
 
+> ⚠️ **本节的原始输出是 T0 重同步之前的，已过期，保留仅为对照。**
+> 它记录的是"旧门禁"的行为：需求表只有 36 条、第 ⑥ 组报「未找到 .ps1/.sh 可检查（跳过）」
+> —— 而仓库里当时就有 28 个脚本，那一组是**死检查**（原因见 §14.5 的 E1）。
+> **当前有效输出见 §14.6。** 保留旧输出是为了让"修之前长什么样"可核对，
+> 不是为了继续引用它 —— 引用它会把一个失效的门禁当成通过依据。
+
 ```text
 
 == 目标文件 ==
@@ -205,6 +216,13 @@
 
 ## 3. 密钥与令牌扫描
 
+> ⚠️ 下面的原始输出采集于 T0 之前（WARN 25 条）。T0 之后重跑为 **WARN 32 条**，
+> 退出码仍为 **0**（PASS）。增加的 7 条**全部是本文件的自引用** ——
+> §14 新增了「重同步后的原始输出」整段，里面又引用了那些内网地址与门禁输出，
+> 于是 `scan_secrets.py` 在本文件里多扫到 7 条同类提示。
+> 换句话说：**告警数会随证据文档变长而增长，这是这个工具的设计后果，不是新风险**。
+> 非自引用部分（13 条）逐条结论见下，**未变**。
+
 ```text
 $ python tools/scan_secrets.py
 扫描文件数: 178（git 跟踪）
@@ -212,6 +230,13 @@ $ python tools/scan_secrets.py
 -- WARN (25) --
 ...
 [SECRETS] PASS — 无禁止项（WARN 25 条，豁免 19 条）
+```
+
+T0 之后：
+
+```text
+$ python tools/scan_secrets.py
+[SECRETS] PASS — 无禁止项（WARN 32 条，豁免 19 条）
 ```
 
 退出码 **0**。25 条 WARN 按来源分类（无一条是禁止项；`scan_secrets.py` 的 FAIL 条件是
@@ -1310,177 +1335,439 @@ App 仍是最小骨架，未接入代理内核、DNS、MITM、过滤等能力，
 
 ---
 
-## 14. 门禁脚本审计（Step 0）—— **发现不一致，已停手**
+## 14. 门禁脚本审计与 T0 重同步（**已完成**）
+
+> 本节替代上一轮的「发现不一致，已停手」。上一轮的结论是**正确**的（附录确实是较新版本、
+> 本地确实缺内容），但当时的**措辞有两处不准**，在本节 14.9 逐条更正。
 
 提示词 2.11 的 Step 0 要求：动手前先核对 `tools/verify_deliverable.ps1` / `.sh`
-与提示词附录是否完全一致，**发现差异立即停止并向用户报告**。
+与提示词附录是否完全一致，不一致就以附录为准覆盖，然后各跑一次、退出码必须为 0。
 
-### 14.1 首要事实：提示词文件在**本轮会话期间被改动了两次**
+### 14.1 结论摘要
 
-| 时点 | 字节数 | 行数 | 附录形态 |
-|---|---|---|---|
-| 第 3 轮记录 | 146185 | 2098 | 正文（明文代码块） |
-| 本轮 Step 0 开始时 | 157194 | 2205 | 正文（明文代码块），新增 2.11 / 2.11-I |
-| 本轮 Step 0 进行中 | **168369** | **1964** | **改为 base64 编码**（附录 A/B/C 各一段 base64 + 声明的字节数） |
+| 项 | 结果 |
+|---|---|
+| 提示词文件 | `F:/Ai/Syfuse-完美提示词.md`，**170504 字节 / 1985 行**，`sha256 4b9fb13b…`（本轮会话期间第三次变动） |
+| 附录形态 | 附录 A/B/C 全部为 base64，并在标题行**自带声明的字节数** |
+| 解码校验 | A = 12238 B、B = 10211 B、C = 8187 B —— **三者与声明值逐字节相符**（解码器自己也校验这一条，对不上即 exit 1） |
+| 重同步 | 已按附录逐字节落盘，`cmp` 复核三份全部 IDENTICAL |
+| 重同步后门禁 | `.sh` **EXIT=0**、`.ps1` **EXIT=0**，两版均为「需求项 38 条，缺失 0 条」、各 101 条 PASS |
+| 附录自身缺陷 | 发现并修掉 4 处（E1–E4），其中 **E1 让第 ⑥ 组长期是死检查** |
+| 补偿控制 | 新增 `tests/run_appendix_sync.sh`（第 ⑦ 组在本仓库失效，见 14.7） |
 
-采集时提示词文件 `sha256 = ef6eed76c7fa7a412355031ff68326e0ef757ea52c3acbc49e9965da731d747d`。
+### 14.2 比对方法（可复现，不用编辑器）
 
-> 这件事本身是**好消息**：改成 base64 之后，"把脚本落盘"从"复制粘贴 + 祈祷编码别坏"
-> 变成**可逐字节校验的机械操作**（解码 → 比对声明字节数 → 比对 sha256）。
-> 之前 `.ps1` 的 BOM 就是在这个环节静默丢掉的（提示词 2.9 专门警告过）。
-
-### 14.2 比对方法（可复现）
-
-1. 定位附录的 ` ````text ` 围栏（当前在 1555 / 1716 / 1849 行），取出中间内容；
-2. 去掉换行后 base64 解码；
-3. 核对**解码字节数**是否等于附录自己声明的 `base64 字节数`；
-4. 与本地文件做**逐字节**比较（不做任何归一化）；不一致时再归一化（剥 BOM、CRLF→LF）
-   做行级 diff，以区分"只是换行不同"与"内容真的不同"。
-
-只比哈希是不够的 —— 哈希不同但说不出差在哪，等于没查。
-
-### 14.3 三个附录，三个都不一致
-
-| 脚本 | 附录（base64 解码后） | 本地 | 差异性质 |
-|---|---|---|---|
-| `tools/verify_deliverable.ps1` | 11477 B / BOM / LF / 238 行<br>`sha256 917b5456e9…` | 10942 B / BOM / **CRLF** / 226 行<br>`sha256 ce305c1a61…` | **内容缺 12 行** + CRLF |
-| `tools/verify_deliverable.sh` | 9405 B / NOBOM / LF / 228 行<br>`sha256 7d4baa99bd…` | 9281 B / NOBOM / LF / 226 行<br>`sha256 8b293f6498…` | **内容缺 2 行** |
-| `tools/run_agent.ps1` | 8187 B / BOM / LF / 184 行<br>`sha256 07c16e89c6…` | 8370 B / BOM / **CRLF** / 184 行<br>`sha256 b957fc25b1…` | **内容完全相同**，只有 CRLF（183 处，正好等于 8370−8187） |
-
-三个附录的解码字节数都**精确等于**各自声明的 `base64 字节数`（11477 / 9405 / 8187），
-所以附录侧没有损坏，差异全在本地。
-
-**`verify_deliverable.ps1` 缺的 12 行**（归一化后的行级 diff）：
-
-```text
-@@ -170,2 +169,0 @@
--37 提速与并行执行规范|提速与并行执行规范
--38 安全提速红线（提速不得降质）|安全提速红线
-@@ -202,9 +199,0 @@
--<# 读取文件头 3 字节。PowerShell 5.1 用 -Encoding Byte，PowerShell 7+ 已移除该参数（改用 -AsByteStream），
--   所以必须按版本选参数，否则在 pwsh 7 下直接抛错、整个门禁崩掉。
--   读失败（文件被占用/权限不足/正好在写）只告警跳过，不能让整个门禁中止。 #>
--function Get-HeadBytes([string]$p, [int]$n = 3) {
--  if ($PSVersionTable.PSVersion.Major -ge 7) {
--    return @(Get-Content -LiteralPath $p -AsByteStream -TotalCount $n)
--  }
--  return @(Get-Content -LiteralPath $p -Encoding Byte -TotalCount $n)
--}
-@@ -213,2 +202 @@
--  try { $b = Get-HeadBytes $s.FullName 3 }
--  catch { Warn ($s.Name + " 读取失败，已跳过：" + $_.Exception.Message); continue }
-+  $b = @(Get-Content -LiteralPath $s.FullName -Encoding Byte -TotalCount 3)
-```
-
-**`verify_deliverable.sh` 缺的 2 行**：
-
-```text
-@@ -171,3 +171 @@
--36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**
--37 提速与并行执行规范|提速与并行执行规范
--38 安全提速红线（提速不得降质）|安全提速红线'
-+36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**'
-```
-
-### 14.4 三处高危影响（逐条说清，不含糊）
-
-**① 门禁第 ⑤ 组看不到本次提速模式自身的约束（`.sh` 与 `.ps1` 都有）**
-
-附录有 38 条需求行，本地只有 36 条 —— 缺的正好是
-`37 提速与并行执行规范` 与 `38 安全提速红线（提速不得降质）`。
-也就是**这一轮要执行的规则，门禁自己不检查**。实测输出：
-
-```text
-$ bash tools/verify_deliverable.sh "F:/Ai/Syfuse-完美提示词.md" 1000
-  [PASS] 36 作者 GitHub 地址内置到 App
-  需求项 36 条，缺失 0 条
-```
-
-"缺失 0 条"和 `exit 0` 都是真的，但它检查的是**更新前的那 36 条**。
-
-**② `.ps1` 缺 `Get-HeadBytes`：在 PowerShell 7+ 上会把整个门禁搞崩**
-
-`-Encoding Byte` 在 **PowerShell 7+ 已被移除**（改用 `-AsByteStream`）。
-本地版本没有版本分支、也没有 `try/catch`，于是：pwsh 7 下直接抛错；
-文件被占用（构建中 / 杀毒扫描）时中止整个门禁，而附录明确要求"只告警跳过"。
-本机 `powershell` 是 **5.1**，所以现在跑得通 —— 属于**在错误的环境上恰好绿**。
-
-**③ `.sh` 第 ⑥ 组从未真正执行过**（附录 B 原文就有这个 bug，不是同步问题）
-
-`$PRUNE` 在使用处**未加引号**，会被 bash 做**通配展开**：
+附录是 base64，所以**不要用文本编辑器落盘** —— 编辑器会顺手改 BOM、改行尾、加尾随换行，
+而这些恰恰是门禁第 ⑥ 组要检查的东西。正确做法是解码写字节：
 
 ```bash
-PRUNE='-path */.git/* -o -path */build/* -o -path */node_modules/* ...'
-find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null
+python tools/extract_appendix.py "F:/Ai/Syfuse-完美提示词.md" .probe/apx
+# 输出示例（含声明的字节数、BOM、CRLF、sha256）：
+#   附录 A -> verify_deliverable.ps1  bytes=12238  declared=12238  bom=True  crlf=False  sha256=5561f422…
+#   附录 B -> verify_deliverable.sh   bytes=10211  declared=10211  bom=False crlf=False  sha256=6a4770f7…
+#   附录 C -> run_agent.ps1           bytes=8187   declared=8187   bom=True  crlf=False  sha256=07c16e89…
+cmp .probe/apx/verify_deliverable.sh tools/verify_deliverable.sh   # 落盘后复核
 ```
 
-实测 `*/build/*` 在仓库根展开成 **58 个** `app/build/...` 路径，find 因此报错退出、
-输出为空，而 `2>/dev/null` 把错误吞掉：
+这个提取器就是为这件事写的，已入库（`tools/extract_appendix.py`），不是一次性脚本。
 
-```text
-$ find . -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>&1 | head -6
-find: paths must precede expression: `app/build/intermediates'
-find: possible unquoted pattern after predicate `-path'?
+### 14.3 重同步前的三处不一致（附录是较新版本）
 
-$ ls -d */build/* 2>/dev/null | wc -l
-58
+| 脚本 | 附录 | 重同步前的本地 | 差异性质 |
+|---|---|---|---|
+| `verify_deliverable.ps1` | 12238 B / BOM / LF / 250 行 | 10942 B / BOM / **CRLF** / 225 行 | 缺 29 行内容 + 行尾是 CRLF |
+| `verify_deliverable.sh` | 10211 B / NOBOM / LF / 244 行 | 9281 B / NOBOM / LF / 226 行 | 缺 23 行内容 |
+| `run_agent.ps1` | 8187 B / BOM / LF / 183 行 | 8370 B / BOM / **CRLF** / 183 行 | **内容完全相同**，仅行尾不同（183 处 CR = 8370−8187） |
+
+缺失内容有三类：
+
+1. **两条新需求行**：`37 提速与并行执行规范`、`38 安全提速红线（提速不得降质）`；
+2. **`Get-HeadBytes` 函数**（附录 A 独有）：按 `$PSVersionTable.PSVersion.Major` 分支，
+   5.1 用 `-Encoding Byte`、7+ 用 `-AsByteStream`，并包 `try/catch`。
+   没有它，门禁在 PowerShell 7+ 上会直接抛错崩掉 —— 而本机 `powershell` 是 5.1，
+   所以这个缺陷在本地**测不出来**，属于「在错误的环境上绿」；
+3. **整个第 ⑦ 组「附录与磁盘一致性」**（两版都新增）：调用
+   `sync_appendix.ps1 -Mode Check`，比对附录 base64 与 `tools/` 是否逐字节一致。
+
+### 14.4 重同步（T0 主体）
+
+按 14.2 解码写字节，`.ps1` 与 `.sh` 一并覆盖。落盘后：
+
+```
+verify_deliverable.ps1  IDENTICAL  12238 bytes   head3=efbbbf  CR=0  LF=250
+verify_deliverable.sh   IDENTICAL  10211 bytes   head3=23212f  CR=0  LF=244
+run_agent.ps1           IDENTICAL   8187 bytes   head3=efbbbf  CR=0  LF=183
 ```
 
-于是 `FOUND=0` → 只报 `[WARN] 未找到 .ps1/.sh 可检查（跳过）`，**退出码仍是 0**。
+`.sh` 的 `head3=23212f` 就是 `#!/`，无 BOM；两份 `.ps1` 都是 `efbbbf`（UTF-8 BOM）。
+行尾全部 LF —— 附录就是这么交付的，不再自作主张改成 CRLF。
 
-同一个门禁的 `.ps1` 版用的是 `Get-ChildItem -Recurse -File` + `Where-Object`，**没有**这个问题。
-实测它能正确检查 `package.sh`、4 个 `module/*.sh`、`verify_deliverable.sh`，
-并正确 PASS 自身的 BOM：
+### 14.5 勘误 E1–E4：附录自身的缺陷（2.3）
+
+重同步后本地**主动偏离**附录，共 4 处，全部登记在
+`docs/errata/appendix-A-verify_deliverable.ps1.diff` 与
+`docs/errata/appendix-B-verify_deliverable.sh.diff`（unified diff，可 `cmp` 校验）。
+
+| # | 文件 | 缺陷 | 修法 |
+|---|---|---|---|
+| **E1** | `.sh` 第 ⑥ 组 | `PRUNE='-path */.git/* …'` **未加引号**，bash 在交给 `find` 之前先做通配展开。仓库里有 `app/build/…` 时会被展开成几十条路径，`find` 报 `paths must precede expression` 后**静默返回空**；`2>/dev/null` 吞掉 stderr、`FOUND=0` 只报 WARN、退出码仍是 0 —— **该组从未真正执行过** | `read -ra PRUNE <<< '…'`（`read` 是内建命令，不做通配展开），使用时 `! \( "${PRUNE[@]}" \)` |
+| **E2** | `.sh` 第 ⑥ 组 | 找不到脚本只报 `WARN` 并跳过 —— 这正是 E1 能长期潜伏的原因 | 改成 `c_bad`（计入 fail、退出码 1） |
+| **E3** | `.ps1` 第 ⑥ 组 | 同 E2（`.ps1` 侧用 `$pruneDirs` 数组过滤，**没有 E1 那个通配 bug**，只是"找不到"也报 WARN） | 改成 `Bad` |
+| **E4** | 两版头部注释 | 附录新增了第 ⑦ 组，但头部注释仍写「检查项一致（共 6 组）」 | 改成「共 7 组」；`.ps1` 的第 ⑦ 组标题也从「附录与 tools/ 脚本一致性」统一为与 `.sh` 相同的「附录与磁盘一致性」 |
+
+E1 的**证据强度**：修 E1 之前，第 ⑥ 组输出 `[WARN] 未找到 .ps1/.sh 可检查（跳过）`，
+而仓库里实际有 28 个脚本；修 E1 之后同一组列出 **28 个脚本、56 条断言全 PASS**。
+一个检查从"0 个对象"变成"28 个对象"，这就是它此前是死检查的直接证明。
+
+### 14.6 重同步 + 勘误后的原始输出
+
+#### 14.6.1 Linux/CI 版（`bash tools/verify_deliverable.sh README.md 300`）
 
 ```text
-$ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_deliverable.ps1 -Path README.md -MinLines 300
+
+== 目标文件 ==
+  README.md
+  字节 79000   行数 1150
+
+== 1. 体积与行数（确认没被截断） ==
+  [PASS] 字节数 79000
+  [PASS] 行数 1150 >= 下限 300
+  [PASS] 首行非空：# Syfuse · 融合代理
+  [PASS] 末行非空：改账号请运行 `tools/set_owner.sh --apply`
+
+== 2. 结构完整性 ==
+  [PASS] ## 章节 32 个
+  [PASS] ### 小节 30 个
+  [PASS] 代码围栏 16 个（成对）
+  [PASS] 无重复小节标题
+
+== 3. 占位符与未完成标记 ==
+  [WARN] L1014 命中位于行内代码/规则说明，忽略：3. **占位符与未完成标记** —— `TODO` / `FIXME` /
+
+== 4. 密钥与令牌残留扫描 ==
+  [PASS] 未发现明文密钥 / 令牌
+
+== 5. 需求逐条覆盖 ==
+  [PASS] 1 SY-Fusion 作为参考基线
+  [PASS] 2 对标 Shadowrocket 且只能多不能少
+  [PASS] 3 主界面非 Web 端
+  [PASS] 4 支持 root 与 LSPosed
+  [PASS] 5 UI 合理化与深度定制
+  [PASS] 6 极客化与全功能自定义
+  [PASS] 7 交付为模块形态
+  [PASS] 8 模块内置软件并互相增强
+  [PASS] 9 新仓库与短英文模块名
+  [PASS] 10 作者署名取 GitHub 账号
+  [PASS] 11 GitHub 令牌能力与权限
+  [PASS] 12 反僵化（不许死脑筋）
+  [PASS] 13 不设能力上限（完全体）
+  [PASS] 14 单文件自包含
+  [PASS] 15 Shadowrocket 有就不重复造
+  [PASS] 16 功能必须真的能用
+  [PASS] 17 节点与 IP 防泄漏
+  [PASS] 18 AdGuard Home 功能并入
+  [PASS] 19 uBlock Origin Lite 功能并入
+  [PASS] 20 SY/SY-Fusion 功能全量并入并有逐项映射
+  [PASS] 21 新流行配色
+  [PASS] 22 透明玻璃（受控）
+  [PASS] 23 App 内浏览器面板开关
+  [PASS] 24 交付完整性纪律
+  [PASS] 25 界面可重新设计（不必照搬实拍）
+  [PASS] 26 功能合理分区
+  [PASS] 27 交付前必须跑校验门禁
+  [PASS] 28 玻璃性能预算
+  [PASS] 29 模块 action.sh 菜单
+  [PASS] 30 Hook 内置能力
+  [PASS] 31 多布局预设 + 可自建 Tab
+  [PASS] 32 SY/SY-Fusion 可复现规格
+  [PASS] 33 完整界面方案主题系统（六维）
+  [PASS] 34 自定义主题方案（逐角色编辑/取色/分区覆盖/主题包）
+  [PASS] 35 默认 7 Tab 布局
+  [PASS] 36 作者 GitHub 地址内置到 App
+  [PASS] 37 提速与并行执行规范
+  [PASS] 38 安全提速红线（提速不得降质）
+  需求项 38 条，缺失 0 条
+
+== 6. 脚本编码规范 ==
+  [PASS] action.sh 无 BOM（shebang 正确）
+  [PASS] action.sh 换行为 LF（正确）
+  [PASS] customize.sh 无 BOM（shebang 正确）
+  [PASS] customize.sh 换行为 LF（正确）
+  [PASS] post-fs-data.sh 无 BOM（shebang 正确）
+  [PASS] post-fs-data.sh 换行为 LF（正确）
+  [PASS] service.sh 无 BOM（shebang 正确）
+  [PASS] service.sh 换行为 LF（正确）
+  [PASS] uninstall.sh 无 BOM（shebang 正确）
+  [PASS] uninstall.sh 换行为 LF（正确）
+  [PASS] package.sh 无 BOM（shebang 正确）
+  [PASS] package.sh 换行为 LF（正确）
+  [PASS] build_aar.sh 无 BOM（shebang 正确）
+  [PASS] build_aar.sh 换行为 LF（正确）
+  [PASS] env.sh 无 BOM（shebang 正确）
+  [PASS] env.sh 换行为 LF（正确）
+  [PASS] perf_apk_size.sh 无 BOM（shebang 正确）
+  [PASS] perf_apk_size.sh 换行为 LF（正确）
+  [PASS] perf_rule_engine.sh 无 BOM（shebang 正确）
+  [PASS] perf_rule_engine.sh 换行为 LF（正确）
+  [PASS] run_appendix_sync.sh 无 BOM（shebang 正确）
+  [PASS] run_appendix_sync.sh 换行为 LF（正确）
+  [PASS] run_e2e.sh 无 BOM（shebang 正确）
+  [PASS] run_e2e.sh 换行为 LF（正确）
+  [PASS] run_feature_matrix.sh 无 BOM（shebang 正确）
+  [PASS] run_feature_matrix.sh 换行为 LF（正确）
+  [PASS] run_hook_check.sh 无 BOM（shebang 正确）
+  [PASS] run_hook_check.sh 换行为 LF（正确）
+  [PASS] run_kernel.sh 无 BOM（shebang 正确）
+  [PASS] run_kernel.sh 换行为 LF（正确）
+  [PASS] run_leak_check.sh 无 BOM（shebang 正确）
+  [PASS] run_leak_check.sh 换行为 LF（正确）
+  [PASS] run_module_checks.sh 无 BOM（shebang 正确）
+  [PASS] run_module_checks.sh 换行为 LF（正确）
+  [PASS] run_restore_check.sh 无 BOM（shebang 正确）
+  [PASS] run_restore_check.sh 换行为 LF（正确）
+  [PASS] run_unit.sh 无 BOM（shebang 正确）
+  [PASS] run_unit.sh 换行为 LF（正确）
+  [PASS] ui_assets_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_assets_check.sh 换行为 LF（正确）
+  [PASS] ui_glass_perf.sh 无 BOM（shebang 正确）
+  [PASS] ui_glass_perf.sh 换行为 LF（正确）
+  [PASS] ui_parity_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_parity_check.sh 换行为 LF（正确）
+  [PASS] ui_runtime_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_runtime_check.sh 换行为 LF（正确）
+  [PASS] ui_screenshot.sh 无 BOM（shebang 正确）
+  [PASS] ui_screenshot.sh 换行为 LF（正确）
+  [PASS] run_agent.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  [PASS] set_owner.sh 无 BOM（shebang 正确）
+  [PASS] set_owner.sh 换行为 LF（正确）
+  [PASS] verify_deliverable.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  [PASS] verify_deliverable.sh 无 BOM（shebang 正确）
+  [PASS] verify_deliverable.sh 换行为 LF（正确）
+
+== 7. 附录与磁盘一致性 ==
+  [WARN] 未找到 sync_appendix.ps1（跳过附录一致性检查）
+
+== 汇总 ==
+  全部通过（WARN 2 项）
+EXIT=0  38605 ms
+```
+
+#### 14.6.2 Windows 版（`.ps1 -Path README.md -MinLines 300`）
+
+```text
+
+== 目标文件 ==
+  F:\Ai\Syfuse\README.md
+  字节 79000   行数 1150
+
+== 1. 体积与行数（确认没被截断） ==
+  [PASS] 字节数 79000
+  [PASS] 行数 1150 >= 下限 300
+  [PASS] 首行非空：# Syfuse · 融合代理
+  [PASS] 末行非空：改账号请运行 `tools/set_owner.sh --apply`。
+
+== 2. 结构完整性 ==
+  [PASS] ## 章节 32 个
+  [PASS] ### 小节 30 个
+  [PASS] 代码围栏 16 个（成对）
+  [PASS] 无重复小节标题
+
+== 3. 占位符与未完成标记 ==
+  [WARN] L1014 命中位于行内代码/规则说明，忽略：3. **占位符与未完成标记** —— `TODO` / `FIXME` / `<your-name>` / 待补写 /
+
+== 4. 密钥与令牌残留扫描 ==
+  [PASS] 未发现明文密钥 / 令牌
+
+== 5. 需求逐条覆盖 ==
+  [PASS] 1 SY-Fusion 作为参考基线
+  [PASS] 2 对标 Shadowrocket 且只能多不能少
+  [PASS] 3 主界面非 Web 端
+  [PASS] 4 支持 root 与 LSPosed
+  [PASS] 5 UI 合理化与深度定制
+  [PASS] 6 极客化与全功能自定义
+  [PASS] 7 交付为模块形态
+  [PASS] 8 模块内置软件并互相增强
+  [PASS] 9 新仓库与短英文模块名
+  [PASS] 10 作者署名取 GitHub 账号
+  [PASS] 11 GitHub 令牌能力与权限
+  [PASS] 12 反僵化（不许死脑筋）
+  [PASS] 13 不设能力上限（完全体）
+  [PASS] 14 单文件自包含
+  [PASS] 15 Shadowrocket 有就不重复造
+  [PASS] 16 功能必须真的能用
+  [PASS] 17 节点与 IP 防泄漏
+  [PASS] 18 AdGuard Home 功能并入
+  [PASS] 19 uBlock Origin Lite 功能并入
+  [PASS] 20 SY/SY-Fusion 功能全量并入并有逐项映射
+  [PASS] 21 新流行配色
+  [PASS] 22 透明玻璃（受控）
+  [PASS] 23 App 内浏览器面板开关
+  [PASS] 24 交付完整性纪律
+  [PASS] 25 界面可重新设计（不必照搬实拍）
+  [PASS] 26 功能合理分区
+  [PASS] 27 交付前必须跑校验门禁
+  [PASS] 28 玻璃性能预算
+  [PASS] 29 模块 action.sh 菜单
+  [PASS] 30 Hook 内置能力
+  [PASS] 31 多布局预设 + 可自建 Tab
+  [PASS] 32 SY/SY-Fusion 可复现规格
+  [PASS] 33 完整界面方案主题系统（六维）
+  [PASS] 34 自定义主题方案（逐角色编辑/取色/分区覆盖/主题包）
+  [PASS] 35 默认 7 Tab 布局
+  [PASS] 36 作者 GitHub 地址内置到 App
+  [PASS] 37 提速与并行执行规范
+  [PASS] 38 安全提速红线（提速不得降质）
+  需求项 38 条，缺失 0 条
+
 == 6. 脚本编码规范 ==
   [PASS] package.sh 无 BOM（shebang 正确）
   [PASS] package.sh 换行为 LF（正确）
-  ...
+  [PASS] action.sh 无 BOM（shebang 正确）
+  [PASS] action.sh 换行为 LF（正确）
+  [PASS] customize.sh 无 BOM（shebang 正确）
+  [PASS] customize.sh 换行为 LF（正确）
+  [PASS] post-fs-data.sh 无 BOM（shebang 正确）
+  [PASS] post-fs-data.sh 换行为 LF（正确）
+  [PASS] service.sh 无 BOM（shebang 正确）
+  [PASS] service.sh 换行为 LF（正确）
+  [PASS] uninstall.sh 无 BOM（shebang 正确）
+  [PASS] uninstall.sh 换行为 LF（正确）
+  [PASS] build_aar.sh 无 BOM（shebang 正确）
+  [PASS] build_aar.sh 换行为 LF（正确）
+  [PASS] env.sh 无 BOM（shebang 正确）
+  [PASS] env.sh 换行为 LF（正确）
+  [PASS] perf_apk_size.sh 无 BOM（shebang 正确）
+  [PASS] perf_apk_size.sh 换行为 LF（正确）
+  [PASS] perf_rule_engine.sh 无 BOM（shebang 正确）
+  [PASS] perf_rule_engine.sh 换行为 LF（正确）
+  [PASS] run_appendix_sync.sh 无 BOM（shebang 正确）
+  [PASS] run_appendix_sync.sh 换行为 LF（正确）
+  [PASS] run_e2e.sh 无 BOM（shebang 正确）
+  [PASS] run_e2e.sh 换行为 LF（正确）
+  [PASS] run_feature_matrix.sh 无 BOM（shebang 正确）
+  [PASS] run_feature_matrix.sh 换行为 LF（正确）
+  [PASS] run_hook_check.sh 无 BOM（shebang 正确）
+  [PASS] run_hook_check.sh 换行为 LF（正确）
+  [PASS] run_kernel.sh 无 BOM（shebang 正确）
+  [PASS] run_kernel.sh 换行为 LF（正确）
+  [PASS] run_leak_check.sh 无 BOM（shebang 正确）
+  [PASS] run_leak_check.sh 换行为 LF（正确）
+  [PASS] run_module_checks.sh 无 BOM（shebang 正确）
+  [PASS] run_module_checks.sh 换行为 LF（正确）
+  [PASS] run_restore_check.sh 无 BOM（shebang 正确）
+  [PASS] run_restore_check.sh 换行为 LF（正确）
+  [PASS] run_unit.sh 无 BOM（shebang 正确）
+  [PASS] run_unit.sh 换行为 LF（正确）
+  [PASS] ui_assets_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_assets_check.sh 换行为 LF（正确）
+  [PASS] ui_glass_perf.sh 无 BOM（shebang 正确）
+  [PASS] ui_glass_perf.sh 换行为 LF（正确）
+  [PASS] ui_parity_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_parity_check.sh 换行为 LF（正确）
+  [PASS] ui_runtime_check.sh 无 BOM（shebang 正确）
+  [PASS] ui_runtime_check.sh 换行为 LF（正确）
+  [PASS] ui_screenshot.sh 无 BOM（shebang 正确）
+  [PASS] ui_screenshot.sh 换行为 LF（正确）
+  [PASS] run_agent.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  [PASS] set_owner.sh 无 BOM（shebang 正确）
+  [PASS] set_owner.sh 换行为 LF（正确）
   [PASS] verify_deliverable.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  [PASS] verify_deliverable.sh 无 BOM（shebang 正确）
+  [PASS] verify_deliverable.sh 换行为 LF（正确）
+
+== 7. 附录与磁盘一致性 ==
+  [WARN] 未找到 sync_appendix.ps1（跳过附录一致性检查）
+
 == 汇总 ==
-  全部通过（WARN 1 项）
+  全部通过（WARN 2 项）
+
+EXIT=0  962 ms
 ```
 
-**两版行为不一致本身就是缺陷**：附录开头写着"与 verify_deliverable.sh 检查项一致（共 6 组）"，
-而第 ⑥ 组在 `.sh` 版是死检查、在 `.ps1` 版是真检查。
+两版**逐项一致**：同样 38/38 需求、同样 28 个脚本 × 2 条断言、同样 2 条 WARN
+（占位符命中行内代码 1 条 + 第 ⑦ 组因缺 `sync_appendix.ps1` 跳过 1 条）、退出码均为 0。
 
-### 14.5 顺带发现：提示词改写导致 2 条需求关键词过时（**不是内容缺失**）
+### 14.7 第 ⑦ 组在本仓库失效 → 补偿控制
 
-用本地（36 条版）门禁跑**当前**提示词文件，退出码变成 **1**：
+第 ⑦ 组要 `tools/sync_appendix.ps1`，而它是**随母版分发的工具，不在附录 A/B/C 三件套里**。
+本仓库没有它，第 ⑦ 组只报 WARN 跳过。也就是说：**「附录被改过而 tools/ 没跟着改」这类漂移
+不会被自动拦住** —— 而本轮踩到的正是这个坑。
+
+因此新增 `tests/run_appendix_sync.sh`，把这件事变成可执行断言：
+
+- 用 `tools/extract_appendix.py` 从提示词附录还原三个脚本；
+- `run_agent.ps1`（未出勘误）必须与 `tools/` **逐字节相同**；
+- `verify_deliverable.ps1` / `.sh`（已出勘误）与附录的 unified diff 必须**逐字等于**
+  `docs/errata/` 里的登记清单 —— 清单变了就说明有一侧被改过，必须重新审计；
+- 复核附录自己声明的编码要求（A/C 带 BOM、B 无 BOM + LF）；
+- 找不到提示词文件 → `exit 3`（SKIP），并打印"缺什么 / 怎么补 / 补完跑哪条命令 / 期望结果"。
+
+已挂进 CI 的 `static` job（`bash tests/run_appendix_sync.sh || [ $? -eq 3 ]`，
+与其它需要外部依赖的检查同一写法）。
+
+原始输出：
 
 ```text
-== 5. 需求逐条覆盖 ==
-  [FAIL] 22 透明玻璃（受控）  —— 未找到关键词：透明玻璃规范
-  [FAIL] 33 主流主题预设方案  —— 未找到关键词：主流主题预设
-  需求项 36 条，缺失 2 条
-== 汇总 ==
-  失败 2 项，WARN 5 项 —— 不允许交付
+
+== 附录还原 ==
+  [INFO] 提示词：F:/Ai/Syfuse-完美提示词.md
+  [INFO] 字节 170504 / 行 1985
+附录 A -> verify_deliverable.ps1  bytes=12238  declared=12238  bom=True  crlf=False  sha256=5561f42255ea57cc13d537b28885db4a6f93bcf63fa0a5442e0adbc5e2a59ecc
+附录 B -> verify_deliverable.sh  bytes=10211  declared=10211  bom=False  crlf=False  sha256=6a4770f704b242332d8f0ccf72c2c3e222136bad31c817ea9d3a6029add4badc
+附录 C -> run_agent.ps1  bytes=8187  declared=8187  bom=True  crlf=False  sha256=07c16e89c6bcc7e80d3b4b943b76850c6cb74d6bda7a06c7947cf12f27ce7722
+  [PASS] 附录 A/B/C 全部按声明的字节数还原
+
+== 未出勘误的脚本（必须逐字节相同） ==
+  [PASS] run_agent.ps1 与附录逐字节相同（8187 字节，sha256 07c16e89c6bcc7e8…）
+
+== 已出勘误的脚本（偏差须等于 docs/errata/ 里的登记清单） ==
+  [PASS] verify_deliverable.ps1 与附录的偏差 == 已登记勘误（6 行内容差异，清单 /f/Ai/Syfuse/docs/errata/appendix-A-verify_deliverable.ps1.diff）
+  [PASS] verify_deliverable.sh 与附录的偏差 == 已登记勘误（13 行内容差异，清单 /f/Ai/Syfuse/docs/errata/appendix-B-verify_deliverable.sh.diff）
+
+== 编码要求（附录声明的） ==
+  [PASS] verify_deliverable.ps1 带 UTF-8 BOM
+  [PASS] run_agent.ps1 带 UTF-8 BOM
+  [PASS] verify_deliverable.sh 无 BOM（shebang 正确）
+  [PASS] verify_deliverable.sh 换行为 LF
+
+===========================================
+appendix-sync 汇总: PASS=8 FAIL=0
+注意：本脚本只覆盖附录 A/B/C 三件套；tools/ 里其余脚本由门禁第 6 组管。
+===========================================
+EXIT=0
 ```
 
-逐条核实后确认是**措辞变了、内容还在**，不是内容被删：
+**变异测试**（证明它不是空断言 —— 项目对每个新断言都做这一步）：
 
-| 需求 | 门禁关键词 | 提示词当前措辞 | 结论 |
-|---|---|---|---|
-| 22 透明玻璃（受控） | `透明玻璃规范` | 第 4.13 节标题「透明玻璃**实现**规范（受控实现，不是无边界的模糊）」 | 内容在，关键词需跟着改 |
-| 33 主流主题预设方案 | `主流主题预设` | 第 4.12 节「4.12 **全部主流预设**」 | 内容在，关键词需跟着改 |
+| 变异 | 期望 | 实测 |
+|---|---|---|
+| 给 `tools/verify_deliverable.sh` 追加一行 `# mutation` | 报 FAIL、退出码 1 | `[FAIL] verify_deliverable.sh 与附录的偏差**不等于**已登记勘误`，`PASS=7 FAIL=1`，EXIT=1 |
+| 给 `tools/run_agent.ps1` 追加 1 字节 | 报 FAIL、退出码 1 | `[FAIL] run_agent.ps1 与附录不一致（附录 8187 字节 / 磁盘 8188 字节）`，`PASS=7 FAIL=1`，EXIT=1 |
+| 两处均还原 | 回到全绿 | `PASS=8 FAIL=0`，EXIT=0 |
 
-**不许用"把关键词放宽到能匹配"的方式让它变绿**（2.11-I 第 4 条：不放宽验收口径）。
-正确做法是把关键词改成提示词的**当前**措辞且保持同等具体度
-（`透明玻璃实现规范`、`主流预设`），并在 `PROGRESS.md` 记明这是**跟随提示词改写**，
-不是降低要求。
+### 14.8 新测到的事实：第 ⑥ 组在 Windows 上要 54 秒（→ 开单元 T7）
 
-### 14.6 处置（已获用户确认）
+E1 修好后第 ⑥ 组**真的跑起来了**，代价是门禁从 10 s 涨到 38–59 s。已定位到根因，不是遍历：
 
-- **T0**：把三个脚本按附录**逐字节**落盘 —— 直接 base64 解码写字节，
-  不经过任何编辑器（`.ps1` 因此天然带上 BOM、天然是 LF）。写完用 14.2 的方法复验：
-  字节数 + sha256 与附录声明一致。
-- 按 2.3 对附录 B 第 ⑥ 组的 `$PRUNE` 缺陷**提勘误并修掉**
-  （pattern 写成 `-path './*/.git/*'` 形式，或对每个 pattern 单独引号化），
-  同时把"找不到脚本可检查"从 `WARN` 改成 **`FAIL`** —— 避免再次静默失效。
-  这一步会让 `.sh` **主动偏离附录**，因此必须在 README 的「提示词勘误」区登记。
-- 同步更新第 ⑤ 组的两条过时关键词（14.5）。
-- 修完重跑两版门禁（`.ps1` + `.sh`），把原始输出整段替换本节的"影响"段落。
-- **在此之前，里程碑级门禁不具备完整效力**：第 ⑤ 组看不到 37/38 两条需求、
-  第 ⑥ 组是死检查。这一条已写进 `PROGRESS.md` 的 `BLOCKERS`，不许含糊过去。
+| 测量 | 结果 |
+|---|---|
+| `find` 单独跑（路径排除式 / `-prune` 式） | **668 ms / 525 ms** —— 遍历不是瓶颈（`app/build` 1818 文件、`ui/build` 1884 文件都已被排除） |
+| 第 ⑥ 组循环内**每次迭代** | **≈ 620 ms**，成本全在 `bom=$(head -c 3 … \| od … \| tr … \| sed …)` 这**一条 4 进程流水线**上 |
+| 同一逻辑在 Windows 版（`Get-Content -TotalCount 3`，PowerShell 内建、零进程创建） | **962 ms**（整个门禁，不是单次迭代） |
+
+即：**38 s 与 54 s 的差距不是算法问题，是 Git Bash 在 Windows 上创建子进程的开销**
+（约 155 ms/次 × 4 次 × 28 文件）。Windows 版快 40 倍，正好反证了这一点。
+
+处置：按 2.11「先量再动 / 不做无度量提速」，本轮**不动**它 —— T0 的既定验收是"门禁跑通且退出码 0"，
+已经达成；把这个有度量、有明确修法的优化**另开单元 T7**（去子进程化：用 bash 内建的
+`read -N 3` 取 BOM、用 `$(<file)` 判 CRLF），并要求先做**新旧判定等价性矩阵测试**
+（BOM×CRLF×文件长度共 9 组）再替换，避免"改快了但改错了"。
+
+### 14.9 更正上一轮的记录（2.9：自查发现说过的话经不起验证时主动更正）
+
+| 上一轮的说法 | 更正 |
+|---|---|
+| 「附录 A 缺 12 行、附录 B 缺 2 行」 | 那是**上一次**提示词版本（146185 B）的差量。提示词在本轮又变了一次（→170504 B），按当前版本重测：`.ps1` 缺 **29** 行、`.sh` 缺 **23** 行。差的不是"行数"这个数字，而是**附录是活的、每次都要重新比对**这一条结论 |
+| 「`.ps1` 缺 `Get-HeadBytes`，在 PowerShell 7 上会崩」 | 成立，但要注意它**在本机测不出来**（本机是 5.1）。这一条已写进 14.3 的说明，避免被当成"已验证" |
+| 「第 ⑤ 组看不到 37/38 两条需求」 | 成立。重同步后 38/38 全绿，且 22/33 两条**没有放宽关键词** —— 是把 README 的措辞对齐到提示词当前写法（`透明玻璃实现规范`、`完整界面方案（皮肤）`），并补写了 37/38 两节的**实质内容**（含耗时基线表），不是塞关键词 |
+| 「先停手等用户决定」 | 用户已选择「重同步 + 提勘误修 `$PRUNE`」+「先提交 M3 改动集」，本轮按此执行完毕 |

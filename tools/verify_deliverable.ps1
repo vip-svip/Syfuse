@@ -1,6 +1,6 @@
 ﻿<#
   verify_deliverable.ps1 —— 交付完整性校验（Windows 版）
-  与 verify_deliverable.sh 检查项一致（共 6 组）。
+  与 verify_deliverable.sh 检查项一致（共 7 组）。
 
   用法：
     powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_deliverable.ps1
@@ -152,7 +152,7 @@ if (-not $NoRequirements) {
 19 uBlock Origin Lite 功能并入|uBlock Origin Lite
 20 SY/SY-Fusion 功能全量并入并有逐项映射|逐项复现映射
 21 新流行配色|OKLCH
-22 透明玻璃（受控）|透明玻璃规范
+22 透明玻璃（受控）|透明玻璃实现规范
 23 App 内浏览器面板开关|启用浏览器面板
 24 交付完整性纪律|把没读完说成读过了
 25 界面可重新设计（不必照搬实拍）|仅供参考，可重新设计
@@ -163,10 +163,12 @@ if (-not $NoRequirements) {
 30 Hook 内置能力|证书固定绕过
 31 多布局预设 + 可自建 Tab|布局预设
 32 SY/SY-Fusion 可复现规格|复现规格
-33 主流主题预设方案|主流主题预设
+33 完整界面方案主题系统（六维）|完整界面方案（皮肤）
 34 自定义主题方案（逐角色编辑/取色/分区覆盖/主题包）|自定义主题方案
 35 默认 7 Tab 布局|默认使用布局 B
 36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**
+37 提速与并行执行规范|提速与并行执行规范
+38 安全提速红线（提速不得降质）|安全提速红线
 '@ -split "`n" | Where-Object { $_.Trim().Length -gt 0 }
 
   $miss = 0
@@ -197,9 +199,19 @@ $scripts = @(
       -not ($parts | Where-Object { $pruneDirs -contains $_ })
     }
 )
-if ($scripts.Count -eq 0) { Warn "未找到 .ps1/.sh 可检查（跳过）" }
+<# 读取文件头 3 字节。PowerShell 5.1 用 -Encoding Byte，PowerShell 7+ 已移除该参数（改用 -AsByteStream），
+   所以必须按版本选参数，否则在 pwsh 7 下直接抛错、整个门禁崩掉。
+   读失败（文件被占用/权限不足/正好在写）只告警跳过，不能让整个门禁中止。 #>
+function Get-HeadBytes([string]$p, [int]$n = 3) {
+  if ($PSVersionTable.PSVersion.Major -ge 7) {
+    return @(Get-Content -LiteralPath $p -AsByteStream -TotalCount $n)
+  }
+  return @(Get-Content -LiteralPath $p -Encoding Byte -TotalCount $n)
+}
+if ($scripts.Count -eq 0) { Bad ("未找到 .ps1/.sh 可检查 —— 扫描根 " + $scanRoot + " 下没有任何脚本，第 6 组形同虚设") }
 foreach ($s in $scripts) {
-  $b = @(Get-Content -LiteralPath $s.FullName -Encoding Byte -TotalCount 3)
+  try { $b = Get-HeadBytes $s.FullName 3 }
+  catch { Warn ($s.Name + " 读取失败，已跳过：" + $_.Exception.Message); continue }
   $hasBom = ($b.Count -ge 3 -and $b[0] -eq 239 -and $b[1] -eq 187 -and $b[2] -eq 191)
   if ($s.Extension -eq '.ps1') {
     if ($hasBom) { Ok ($s.Name + " 带 UTF-8 BOM（PS 5.1 解码正确）") }
@@ -211,6 +223,19 @@ foreach ($s in $scripts) {
     $raw = Get-Content -LiteralPath $s.FullName -Raw -Encoding UTF8
     if ($raw -match "`r`n") { Bad ($s.Name + " 含 CRLF 换行，bash 会报 '\r: command not found'，必须转成 LF") }
     else { Ok ($s.Name + " 换行为 LF（正确）") }
+  }
+}
+
+# ---------- 7. 附录与磁盘一致性（base64 模式）----------
+Head "7. 附录与磁盘一致性"
+$sync = Join-Path $scanRoot 'sync_appendix.ps1'
+if (-not (Test-Path -LiteralPath $sync)) { Warn "未找到 sync_appendix.ps1（跳过附录一致性检查）" }
+else {
+  $chk = & powershell -NoProfile -ExecutionPolicy Bypass -File $sync -Mode Check 2>&1 | Out-String
+  if ($chk -match '结论：一致') { Ok "附录与 tools/ 三个脚本一致（base64 逐字节）" }
+  else {
+    Bad "附录与 tools/ 脚本不一致（用 tools\sync_appendix.ps1 -Mode Embed 修复）"
+    ($chk -split "`n") | Where-Object { $_ -match '\[FAIL\]' } | Select-Object -First 5 | ForEach-Object { "      " + $_.Trim() }
   }
 }
 

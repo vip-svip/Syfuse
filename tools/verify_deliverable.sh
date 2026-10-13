@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify_deliverable.sh —— 交付完整性校验（Linux / macOS / CI 版）
-# 与 verify_deliverable.ps1 检查项一致（共 6 组）。
+# 与 verify_deliverable.ps1 检查项一致（共 7 组）。
 # 本文件必须是「无 BOM 的 UTF-8」——带 BOM 会破坏 shebang；这一点也由第 6 组检查。
 #
 # 用法:
@@ -154,7 +154,7 @@ REQS='1 SY-Fusion 作为参考基线|SY-Fusion
 19 uBlock Origin Lite 功能并入|uBlock Origin Lite
 20 SY/SY-Fusion 功能全量并入并有逐项映射|逐项复现映射
 21 新流行配色|OKLCH
-22 透明玻璃（受控）|透明玻璃规范
+22 透明玻璃（受控）|透明玻璃实现规范
 23 App 内浏览器面板开关|启用浏览器面板
 24 交付完整性纪律|把没读完说成读过了
 25 界面可重新设计（不必照搬实拍）|仅供参考，可重新设计
@@ -165,10 +165,12 @@ REQS='1 SY-Fusion 作为参考基线|SY-Fusion
 30 Hook 内置能力|证书固定绕过
 31 多布局预设 + 可自建 Tab|布局预设
 32 SY/SY-Fusion 可复现规格|复现规格
-33 主流主题预设方案|主流主题预设
+33 完整界面方案主题系统（六维）|完整界面方案（皮肤）
 34 自定义主题方案（逐角色编辑/取色/分区覆盖/主题包）|自定义主题方案
 35 默认 7 Tab 布局|默认使用布局 B
-36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**'
+36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**
+37 提速与并行执行规范|提速与并行执行规范
+38 安全提速红线（提速不得降质）|安全提速红线'
 
 TOTAL=0
 MISS=0
@@ -190,7 +192,11 @@ printf '  需求项 %s 条，缺失 %s 条\n' "$TOTAL" "$MISS"
 head2 "6. 脚本编码规范"
 SCAN_DIR=$(dirname "$FILE")
 FOUND=0
-PRUNE='-path */.git/* -o -path */build/* -o -path */node_modules/* -o -path */downloads/* -o -path */screenshots/* -o -path */logs/* -o -path */dist/* -o -path */.gradle/*'
+# 勘误 E1：原先 PRUNE 是一个未加引号的字符串，bash 会在交给 find 之前先做通配展开
+# （仓库里存在 app/build/... 这类目录时会被展开成几十条路径），find 于是报
+# "paths must precede expression" 并静默返回空 —— 第 6 组形同虚设。
+# 改用 read -ra 切成数组（read 是内建命令，不做通配展开），每个 pattern 原样交给 find。
+read -ra PRUNE <<<'-path */.git/* -o -path */build/* -o -path */node_modules/* -o -path */downloads/* -o -path */screenshots/* -o -path */logs/* -o -path */dist/* -o -path */.gradle/*'
 while IFS= read -r s; do
   [ -z "$s" ] && continue
   FOUND=$((FOUND+1))
@@ -211,8 +217,26 @@ while IFS= read -r s; do
       c_ok "$(basename "$s") 换行为 LF（正确）"
     fi
   fi
-done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null)
-[ "$FOUND" -eq 0 ] && c_warn "未找到 .ps1/.sh 可检查（跳过）"
+done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( "${PRUNE[@]}" \) 2>/dev/null)
+# 勘误 E2：找不到脚本由 WARN 改成 FAIL —— 「静默跳过」正是 E1 能长期潜伏的原因。
+[ "$FOUND" -eq 0 ] && c_bad "未找到 .ps1/.sh 可检查 —— 扫描根 $SCAN_DIR 下没有任何脚本，第 6 组形同虚设"
+
+# ---------- 7. 附录与磁盘一致性（base64 模式）----------
+head2 "7. 附录与磁盘一致性"
+SYNC="$SCAN_DIR/sync_appendix.ps1"
+if [ ! -f "$SYNC" ]; then
+  c_warn "未找到 sync_appendix.ps1（跳过附录一致性检查）"
+elif command -v powershell >/dev/null 2>&1; then
+  CHK=$(powershell -NoProfile -ExecutionPolicy Bypass -File "$SYNC" -Mode Check 2>&1)
+  if printf '%s' "$CHK" | grep -q '结论：一致'; then
+    c_ok "附录与 tools/ 三个脚本一致（base64 逐字节）"
+  else
+    c_bad "附录与 tools/ 脚本不一致（用 sync_appendix.ps1 -Mode Embed 修复）"
+    printf '%s\n' "$CHK" | grep '\[FAIL\]' | head -5 | while IFS= read -r l; do c_bad "    $l"; done
+  fi
+else
+  c_warn "无 powershell，跳过附录一致性检查"
+fi
 
 # ---------- 汇总 ----------
 head2 "汇总"

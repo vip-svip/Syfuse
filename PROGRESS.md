@@ -37,7 +37,8 @@ TASKS
 
 | 单元 | 范围(文件) | 依赖 | 验收命令 | 预计 | 状态 | 实测耗时 |
 |---|---|---|---|---|---|---|
-| **T0** 门禁脚本与提示词附录重同步（含附录 B 第⑥组 `$PRUNE` 勘误） | `tools/verify_deliverable.sh`、`tools/verify_deliverable.ps1` | 无 | `bash tools/verify_deliverable.sh README.md 300` 且第⑥组**真的列出了脚本**、`exit 0` | 30 min | 未开始 | — |
+| **T0** 门禁脚本与提示词附录重同步（含附录 B 第⑥组 `$PRUNE` 勘误） | `tools/verify_deliverable.sh`、`tools/verify_deliverable.ps1`、`tools/extract_appendix.py`、`docs/errata/`、`tests/run_appendix_sync.sh` | 无 | `bash tools/verify_deliverable.sh README.md 300` 且第⑥组**真的列出了脚本**、`exit 0` | 30 min | **已完成** | **≈95 min（超预计 3.2 倍，见「第 5 轮」第 6 条）** |
+| **T7** 门禁第⑥组去子进程化（Windows 上 620 ms/文件 → 目标 <20 ms/文件） | `tools/verify_deliverable.sh` | 无 | ① 新旧 BOM/CRLF 判定**等价性矩阵**（BOM×CRLF×文件长度 9 组）全通过；② `bash tools/verify_deliverable.sh README.md 300` 退出码 0 且耗时 < 20 s；③ 更新 `docs/errata/` 清单 | 30 min | 未开始 | — |
 | **T1** 内核宿主 AAR 构建链路（gomobile + NDK 前置检查，产出 `kernel/out/*.aar`） | `src/tools/build_aar.sh`、`kernel/` | 无 | `bash src/tools/build_aar.sh` 产出 AAR 且 `unzip -l` 含 `libsyfuse.so` | 60 min | 受阻（无 gomobile + NDK） | — |
 | **T2** `proxies.start/stop/reload/select/urlTest` 在 Go 侧真实现（先出最小可跑隧道） | `src/cmd/syfused/proxies.go`、`src/cmd/syfused/main.go` | T1 | `syfused proxies start --profile p1` 起进程并 `status` 报 running | 60 min | 未开始 | — |
 | **T3** `UdsDataPlane` 接真实 `proxies.*`（去掉"未实现"路径）并补往返断言 | `engine/.../UdsDataPlane.kt`、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt` | T2 | `:daemon-protocol:test` 全绿且新增隧道往返用例 | 45 min | 未开始 | — |
@@ -46,33 +47,78 @@ TASKS
 | **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | 未开始 | — |
 
 **并行批次**（2.11-B，常驻 3～6 个，同文件不并行）：
-- 批次 1（无依赖，可并行 4 个）：**T0 / T1 / T4 / T6**
+- 批次 1（无依赖）：**T0 ✅ / T7 / T4 / T6**；**T1** 受阻（缺 gomobile + NDK）
 - 批次 2：**T2**（等 T1）→ **T3**（等 T2）→ **T5**（等 T4）
+- T7 与 T4/T6 不碰同一文件（T7 只动 `tools/verify_deliverable.sh`），可并行
 
 ```
-NEXT_ACTION: T0 —— 门禁脚本与提示词附录重同步。按 2.9 把 tools/verify_deliverable.sh / .ps1
-             逐字节落盘为附录 A/B 的**当前版本**（附录 A 238 行、附录 B 228 行；本地分别是
-             226 / 226 行），补上缺的两条需求行 `37 提速与并行执行规范`、`38 安全提速红线`
-             与附录 A 里的 `Get-HeadBytes`（按 $PSVersionTable.PSVersion.Major 分支，
-             5.1→-Encoding Byte / 7+→-AsByteStream，并包 try/catch）；
-             `.ps1` 带 UTF-8 BOM、`.sh` 无 BOM + LF。
-             然后按 2.3 对附录 B 第⑥组的缺陷提勘误并修掉：`$PRUNE` 变量未加引号，
-             被 bash 通配展开成 58 个 `app/build/...` 路径，find 报
-             "paths must precede expression" 后**静默返回空**，该组因此从未真正执行过
-             （只报 WARN 跳过，退出码仍 0）。修法：pattern 写成 `-path './*/.git/*'` 形式
-             或对每个 pattern 单独引号化；并把"找不到脚本可检查"从 WARN 改成 **FAIL**，
-             避免再次静默失效。修完重跑两版门禁，把**原始输出整段**贴进 docs/EVIDENCE.md。
-             完成后直接进批次 1 的 T1 / T4 / T6。
+NEXT_ACTION: T0 已完成（门禁与附录逐字节重同步 + 勘误 E1–E4 + 补偿控制 + 两版门禁 exit 0）。
+             下一轮进入**批次 1 剩余三个单元并行**：T7 / T4 / T6。
+             - **T7**（先做，它只动 tools/verify_deliverable.sh）：把第⑥组循环里的
+               `bom=$(head -c 3 … | od … | tr … | sed …)`（4 次子进程 ≈620 ms/文件）
+               换成 bash 内建读取；**必须先过等价性矩阵测试**（BOM×CRLF×文件长度 9 组，
+               新旧判定逐组一致）再替换，然后更新 docs/errata/ 清单里的 diff。
+             - **T4**（M4 节点模型 + 8 协议分享链接 round-trip）：`domain/model/Models.kt`、
+               `domain/node/ShareLink.kt`、`domain/src/test/.../ShareLinkTest.kt`。
+             - **T6**（M5 语料扩容 38 → ≥120 条期望）：只动 `tests/corpus/*.txt` + `tests/expect.tsv`，
+               两侧（Kotlin + Go）必须同时绿且条数一致。
+             三个单元碰不到同一文件，可并行；子代理产出由主代理验证后合入，不接受自证。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）
           ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2
           ③ 仓库 private + 无 Release → 自更新链路（18.5）与 update.json 匿名可达性无法验证
-          ④ 【本轮新发现，已停手待处理】tools/verify_deliverable.* 与提示词附录不一致 4 处，
-             其中 3 处高危（详见 T0）。**里程碑级门禁在此之前不具备完整效力**：
-             第⑤组看不到 37/38 两条需求、第⑥组是死检查。
-ROUND_TIME: 第 4 轮 ≈ 3h10m（含 2 次 HTTP 429 中断重跑）；本段 Step 0 测量另计 3m31s
-UNIT: 第 4 轮完成 M3 的 ①②③④ 四步；Step 0 已做完（测量 + 门禁比对），按指令在发现差异处停手
-LAST_UPDATED: 2026-10-13T04:35Z (2026-10-13 12:35 +0800)
+          ④ 【T0 已解决】门禁脚本与提示词附录不一致 —— 已逐字节重同步并修掉附录自身 4 处缺陷
+             （E1–E4），两版门禁 exit 0、需求 38/38。**遗留一条已知局限**：门禁第⑦组
+             依赖随母版分发的 tools/sync_appendix.ps1，本仓库没有它 → 那一组只 WARN 跳过。
+             已用 tests/run_appendix_sync.sh（含 2 个变异测试）做补偿控制并挂进 CI。
+          ⑤ 【本轮新量到】第⑥组在 Windows 上 54 s（Git Bash 子进程创建 ≈155 ms/次 ×4 ×28 文件；
+             同一逻辑在 .ps1 上只要 0.96 s）。已开 T7，本轮不动它 —— 不在没度量前提速。
+ROUND_TIME: 第 5 轮 ≈ 2h05m（T0 单单元 ≈95 min，超预计 3.2 倍；已按 2.11 停止加码、把新发现拆成 T7）
+UNIT: 第 5 轮完成 T0（重同步 + 勘误 E1–E4 + 补偿控制 + 证据落盘 + 提交 M3 改动集 8928de6）
+LAST_UPDATED: 2026-10-13T05:10Z (2026-10-13 13:10 +0800)
 ```
+
+---
+
+## 第 5 轮（2026-10-13）实际做了什么
+
+本轮只做一件事：**T0 —— 把交付门禁拉回与提示词附录一致，并修掉附录自身的缺陷**。
+起因是上一轮 Step 0 的比对发现门禁与附录不一致（详见 `docs/EVIDENCE.md` §14）。
+
+1. **先提交上一轮的 M3 改动集**（`8928de6`）：提交前把四项门禁全跑一遍取原始输出，
+   确认全绿才提交 —— 5 模块 / 126 用例 / 0 失败、Go 127 用例 / 0 失败、
+   module-checks PASS=109 FAIL=0 PEND=1、secrets PASS。
+
+2. **确认提示词文件又变了**：`146185 B / 2098 行` → `157194 B / 2205 行` →
+   **`170504 B / 1985 行`**。第三次变化把附录从纯文本代码块改成 **base64 + 自带声明字节数**。
+   教训写在 §14.1：**附录是活的，每次动手前都要重新比对**，不能沿用上一轮的差量结论。
+
+3. **按 base64 解码逐字节落盘**，不用编辑器（编辑器会顺手改 BOM / 行尾 / 尾随换行，
+   而这些正是第⑥组要检查的东西）。三份全部 `cmp` IDENTICAL，
+   解码字节数与附录声明值逐个相符（12238 / 10211 / 8187）。
+
+4. **修掉附录自身的 4 处缺陷（勘误 E1–E4）**，登记在 `docs/errata/`：
+   其中 **E1 是真正的高危** —— 第⑥组的 `$PRUNE` 未加引号，被 bash 通配展开后
+   `find` 报 `paths must precede expression` 并**静默返回空**，而 `2>/dev/null` 吞掉 stderr、
+   `FOUND=0` 只报 WARN、退出码仍是 0。**这一组从未真正执行过**：
+   修之前它说"未找到脚本可检查"，修之后它列出 28 个脚本、56 条断言全 PASS。
+
+5. **给"第⑦组在本仓库失效"补上补偿控制**：第⑦组要 `tools/sync_appendix.ps1`，
+   而它随母版分发、不在附录三件套里，本仓库没有 → 只 WARN 跳过。
+   新增 `tests/run_appendix_sync.sh`：从附录还原 → 与 `tools/` 逐字节比对 →
+   偏差必须**逐字等于** `docs/errata/` 的登记清单；配 2 个变异测试证明它不是空断言；
+   已挂进 CI 的 `static` job。
+
+6. **单元超时如实上报**：T0 预计 30 min，实际 **≈95 min（3.2 倍）**。
+   超时的原因不是拖沓，而是"不一致"的**规模在动手后才暴露**：上一轮看到的是 4 处行级差异，
+   实际是附录整体换代（多出整个第⑦组 + 两个版本各自的修复），
+   且新增的补偿控制本身也要写、要变异测试。
+   按 2.11「超过预计 2 倍就停下换策略」：**本轮就此收口**，不再顺手把性能问题一起改，
+   而是把新量到的第⑥组 54 s 拆成独立单元 **T7**（有度量、有明确修法、有等价性矩阵作为前置），
+   下一轮与 T4/T6 并行做。
+
+7. **同步更新的文档**：`README.md`（门禁 6 组 → 7 组、勘误登记区、任务拆分与耗时基线两节，
+   并把两处过时措辞对齐到提示词当前写法）、`docs/EVIDENCE.md`（§0 汇总重采、
+   §2 标注为过期并指向 §14.6、**§14 整体重写**）、`CHANGELOG.md`、`.github/workflows/ci.yml`。
 
 ---
 
@@ -222,10 +268,14 @@ bash tests/run_kernel.sh          # Go：gofmt / vet / build / 127 用例 / 零�
 bash tests/perf_rule_engine.sh    # 规则引擎基准（1 轮预热丢弃 + 5 轮测量，约 8 分钟）
 bash tests/run_module_checks.sh   # 模块静态校验
 bash tests/run_restore_check.sh   # 沙箱内安装→卸载→残留比对
+bash tests/run_appendix_sync.sh   # 附录 A/B/C ↔ tools/ 逐字节一致性（门禁第⑦组的补偿控制）
 python tools/scan_secrets.py      # 密钥/令牌扫描
 bash package.sh                   # 产出 dist/（APK × 3 ABI + 模块 ZIP）
 bash tools/verify_deliverable.sh README.md 300   # 交付门禁，退出码必须为 0
 ```
+
+`tests/run_appendix_sync.sh` 需要提示词文件：默认读 `F:/Ai/Syfuse-完美提示词.md`，
+可用 `SYFUSE_PROMPT=<路径>` 覆盖；文件不存在时 `exit 3`（SKIP）并打印"缺什么 / 怎么补"。
 
 需要设备/Release 的检查**无设备时 `exit 3 = SKIP`**，`SKIP` 不是通过（`tests/env.sh` 的硬约束）。
 
@@ -241,14 +291,25 @@ bash tools/verify_deliverable.sh README.md 300   # 交付门禁，退出码必�
 | `tests/run_kernel.sh`（Go，127 用例） | 19 s |
 | `tests/run_module_checks.sh`（PASS=109 FAIL=0 PEND=1） | 41 s |
 | `tools/scan_secrets.py` | 1 s |
-| `tools/verify_deliverable.sh README.md 300` | 10 s |
-| **门禁合计** | **≈169 s（2.8 min）** |
+| `tools/verify_deliverable.sh README.md 300`（**T0 重同步后**） | **39 s** |
+| `tools/verify_deliverable.ps1 -Path README.md -MinLines 300`（同上） | **0.96 s** |
+| `tests/run_appendix_sync.sh`（新增） | 14 s |
+| **门禁合计** | **≈212 s（3.5 min）** |
 
-结论：门禁总耗时不构成瓶颈（2.8 min），**不需要为了速度换环境或上 WSL2**
+结论：门禁总耗时不构成瓶颈（3.5 min），**不需要为了速度换环境或上 WSL2**
 （2.11-D 明确"先量一次再决定"）。真正的杠杆在 2.11-A/B 的**粒度与并行**。
 
-> ⚠️ 上表是在 **T0 之前**采集的。当时门禁第⑤组看不到两条新需求、第⑥组是死检查，
-> 所以这 169 s 里有约 10 s 是"跑了但没真检查"。T0 完成后需重采一次。
+**T0 前后的对比（这一栏必须看，否则会误读成"变慢了"）**：
+
+| | T0 之前 | T0 之后 |
+|---|---|---|
+| `.sh` 门禁耗时 | 10 s | **39 s** |
+| 第⑥组实际检查的脚本数 | **0**（`$PRUNE` 未引号 → `find` 报错 → 静默空） | **28**（28 个脚本 × 2 条断言 = 56 条） |
+| 第⑤组需求条数 | 36（看不到 37/38） | **38** |
+
+也就是说：多出来的 29 s **不是新开销，是把一个从来没跑过的检查真正跑起来**。
+39 s 里约 34 s 花在 Git Bash 的子进程创建上（≈155 ms/次 × 4 次 × 28 文件）——
+同一逻辑在 `.ps1` 上只要 0.96 s，正好反证了这一点。已开单元 **T7** 去子进程化。
 
 ## 退出码约定
 

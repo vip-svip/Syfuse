@@ -1,0 +1,35 @@
+--- 附录B/verify_deliverable.sh
++++ tools/verify_deliverable.sh
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env bash
+ # verify_deliverable.sh —— 交付完整性校验（Linux / macOS / CI 版）
+-# 与 verify_deliverable.ps1 检查项一致（共 6 组）。
++# 与 verify_deliverable.ps1 检查项一致（共 7 组）。
+ # 本文件必须是「无 BOM 的 UTF-8」——带 BOM 会破坏 shebang；这一点也由第 6 组检查。
+ #
+ # 用法:
+@@ -192,7 +192,11 @@
+ head2 "6. 脚本编码规范"
+ SCAN_DIR=$(dirname "$FILE")
+ FOUND=0
+-PRUNE='-path */.git/* -o -path */build/* -o -path */node_modules/* -o -path */downloads/* -o -path */screenshots/* -o -path */logs/* -o -path */dist/* -o -path */.gradle/*'
++# 勘误 E1：原先 PRUNE 是一个未加引号的字符串，bash 会在交给 find 之前先做通配展开
++# （仓库里存在 app/build/... 这类目录时会被展开成几十条路径），find 于是报
++# "paths must precede expression" 并静默返回空 —— 第 6 组形同虚设。
++# 改用 read -ra 切成数组（read 是内建命令，不做通配展开），每个 pattern 原样交给 find。
++read -ra PRUNE <<<'-path */.git/* -o -path */build/* -o -path */node_modules/* -o -path */downloads/* -o -path */screenshots/* -o -path */logs/* -o -path */dist/* -o -path */.gradle/*'
+ while IFS= read -r s; do
+   [ -z "$s" ] && continue
+   FOUND=$((FOUND+1))
+@@ -213,8 +217,9 @@
+       c_ok "$(basename "$s") 换行为 LF（正确）"
+     fi
+   fi
+-done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null)
+-[ "$FOUND" -eq 0 ] && c_warn "未找到 .ps1/.sh 可检查（跳过）"
++done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( "${PRUNE[@]}" \) 2>/dev/null)
++# 勘误 E2：找不到脚本由 WARN 改成 FAIL —— 「静默跳过」正是 E1 能长期潜伏的原因。
++[ "$FOUND" -eq 0 ] && c_bad "未找到 .ps1/.sh 可检查 —— 扫描根 $SCAN_DIR 下没有任何脚本，第 6 组形同虚设"
+ 
+ # ---------- 7. 附录与磁盘一致性（base64 模式）----------
+ head2 "7. 附录与磁盘一致性"

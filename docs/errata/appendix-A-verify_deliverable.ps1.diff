@@ -1,0 +1,28 @@
+--- 附录A/verify_deliverable.ps1
++++ tools/verify_deliverable.ps1
+@@ -1,6 +1,6 @@
+ ﻿<#
+   verify_deliverable.ps1 —— 交付完整性校验（Windows 版）
+-  与 verify_deliverable.sh 检查项一致（共 6 组）。
++  与 verify_deliverable.sh 检查项一致（共 7 组）。
+ 
+   用法：
+     powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_deliverable.ps1
+@@ -208,7 +208,7 @@
+   }
+   return @(Get-Content -LiteralPath $p -Encoding Byte -TotalCount $n)
+ }
+-if ($scripts.Count -eq 0) { Warn "未找到 .ps1/.sh 可检查（跳过）" }
++if ($scripts.Count -eq 0) { Bad ("未找到 .ps1/.sh 可检查 —— 扫描根 " + $scanRoot + " 下没有任何脚本，第 6 组形同虚设") }
+ foreach ($s in $scripts) {
+   try { $b = Get-HeadBytes $s.FullName 3 }
+   catch { Warn ($s.Name + " 读取失败，已跳过：" + $_.Exception.Message); continue }
+@@ -227,7 +227,7 @@
+ }
+ 
+ # ---------- 7. 附录与磁盘一致性（base64 模式）----------
+-Head "7. 附录与 tools/ 脚本一致性"
++Head "7. 附录与磁盘一致性"
+ $sync = Join-Path $scanRoot 'sync_appendix.ps1'
+ if (-not (Test-Path -LiteralPath $sync)) { Warn "未找到 sync_appendix.ps1（跳过附录一致性检查）" }
+ else {

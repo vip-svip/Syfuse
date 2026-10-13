@@ -66,10 +66,17 @@ jobs:
       - name: 红队静态检查（R1–R6）
         run: bash tests/run_module_checks.sh
 
-      # 交付门禁（第 12 部分要求）：6 组检查，退出码非 0 即禁止交付。
+      # 交付门禁（第 12 部分要求）：7 组检查，退出码非 0 即禁止交付。
       # 提示词文件本身也要过 —— 防止把没读完/被截断的文档当交付物。
       - name: 交付门禁（README）
         run: bash tools/verify_deliverable.sh README.md 300
+
+      # 门禁第 7 组（附录 ↔ tools/ 一致性）依赖随母版分发的 tools/sync_appendix.ps1，
+      # 本仓库没有它，那一组只会 WARN 跳过。所以用这个脚本补上：
+      # 它从提示词附录还原三个脚本，与 tools/ 逐字节比对，偏差必须等于 docs/errata/ 的登记清单。
+      # CI runner 上没有提示词文件 → exit 3（SKIP），这是预期结果，不是失败。
+      - name: 附录与 tools/ 一致性（无提示词则 SKIP）
+        run: bash tests/run_appendix_sync.sh || [ $? -eq 3 ]
 
       # 12 部分要求的其余验证脚本。需要设备的会自行 exit 3（SKIP）——
       # 在 CI 上这是**预期**结果，不是失败；但不允许它们返回 0 冒充通过。

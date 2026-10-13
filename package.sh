@@ -144,6 +144,12 @@ rm -f "$ZIP"
 # 便携打包。`zip` 并非到处都有 —— Windows Git Bash 默认就没有。
 # 缺它会让**模块 ZIP 静默缺失**，而模块 ZIP 正是本项目的交付主体（提示词 3.5），
 # 因此这里必须有等价回退，并且两条路径都失败时要硬报错，不能继续走成功分支。
+#
+# ⚠️ 可执行位不能依赖文件系统：本仓库主要在 **Windows/NTFS** 上打包，而 NTFS 没有
+# Unix 权限位 —— `os.stat().st_mode` 恒为 0666，上面那几条 `chmod` 在 Windows 上是空操作。
+# 实测后果：早期产物里 action.sh / customize.sh / bin/syfused-* 全部是 0666，
+# 刷进设备后脚本无法执行、守护进程无法启动，**模块形同废包**。
+# 因此这里改成按**显式白名单**判定：该是 0755 的条目一律写 0755，与宿主文件系统无关。
 zip_ok=0
 if command -v zip >/dev/null 2>&1; then
   if ( cd "$MOD" && zip -q -r -X "$ZIP" . -x '*.DS_Store' -x '*__MACOSX*' ) && [ -f "$ZIP" ]; then
@@ -152,26 +158,80 @@ if command -v zip >/dev/null 2>&1; then
 fi
 if [ "$zip_ok" -ne 1 ] && [ -n "$py" ]; then
   if "$py" - "$MOD" "$ZIP" <<'PY'
-import os, stat, sys, zipfile
+import os, sys, zipfile
+
 src, out = sys.argv[1], sys.argv[2]
+
+def mode_for(rel: str) -> int:
+    """返回该条目在模块包内应有的 Unix 权限位。
+
+    不读 st_mode —— 见上方注释：NTFS 上它没有意义。
+    规则与 KernelSU/Magisk 的安装器期望一致：
+      - 所有 *.sh（customize/post-fs-data/service/uninstall/action）及
+        META-INF/.../update-binary  -> 0755（安装器要执行它们）
+      - bin/syfused-*             -> 0755（守护进程二进制）
+      - 其余（配置、module.prop、内置 APK）-> 0644
+    """
+    base = os.path.basename(rel)
+    if rel == 'META-INF/com/google/android/update-binary':
+        return 0o755
+    if base.endswith('.sh'):
+        return 0o755
+    if rel.startswith('bin/') and base.startswith('syfused-'):
+        return 0o755
+    return 0o644
+
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d != '__MACOSX']
+        dirs[:] = sorted(d for d in dirs if d != '__MACOSX')
         for name in sorted(files):
             if name == '.DS_Store':
                 continue
             full = os.path.join(root, name)
             rel = os.path.relpath(full, src).replace(os.sep, '/')
-            zi = zipfile.ZipInfo.from_file(full, rel)
-            # 保留权限位（模块脚本与二进制依赖可执行位）
-            zi.external_attr = (os.stat(full).st_mode & 0xFFFF) << 16
+            zi = zipfile.ZipInfo(rel)
+            # 目录位 (0o40000) | 权限位，左移 16 位即 Unix mode 的高 16 位。
+            zi.external_attr = (0o100000 | mode_for(rel)) << 16
             zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.date_time = (1980, 1, 1, 0, 0, 0)  # 固定时间戳：让打包可复现
             with open(full, 'rb') as fh:
                 z.writestr(zi, fh.read())
+
+print(f"  已写出 {len(zipfile.ZipFile(out).namelist())} 个条目，权限位按白名单显式写入")
 PY
   then
     [ -f "$ZIP" ] && zip_ok=1
   fi
+fi
+
+# 可执行位自检：读回刚写的 ZIP 断言关键条目必须是 0755。
+# 这条检查存在的理由是"权限位曾经整个丢过"——不在打包现场断言，就要等刷机才发现。
+if [ "$zip_ok" -eq 1 ] && [ -n "$py" ]; then
+  "$py" - "$ZIP" <<'PY' || zip_ok=0
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+need = [
+    'customize.sh', 'post-fs-data.sh', 'service.sh', 'uninstall.sh', 'action.sh',
+    'META-INF/com/google/android/update-binary',
+    'bin/syfused-arm64', 'bin/syfused-arm', 'bin/syfused-amd64',
+]
+bad = []
+for n in need:
+    try:
+        i = z.getinfo(n)
+    except KeyError:
+        bad.append(f'{n}: 缺失')
+        continue
+    m = (i.external_attr >> 16) & 0o777
+    if m != 0o755:
+        bad.append(f'{n}: {m:04o} (应为 0755)')
+if bad:
+    print('  [FAIL] 可执行位自检未通过:', file=sys.stderr)
+    for b in bad:
+        print('    ' + b, file=sys.stderr)
+    sys.exit(1)
+print('  [PASS] 可执行位自检：9 个关键条目均为 0755')
+PY
 fi
 
 if [ "$zip_ok" -ne 1 ]; then

@@ -52,6 +52,11 @@ jobs:
       - name: 红队静态检查（R1–R6）
         run: bash tests/run_module_checks.sh
 
+      # 交付门禁（第 12 部分要求）：6 组检查，退出码非 0 即禁止交付。
+      # 提示词文件本身也要过 —— 防止把没读完/被截断的文档当交付物。
+      - name: 交付门禁（README）
+        run: bash tools/verify_deliverable.sh README.md 300
+
       - name: 上传静态检查输出
         if: always()
         uses: actions/upload-artifact@v4

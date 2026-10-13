@@ -624,17 +624,26 @@ UI 显示当前可用引擎并允许切换；全部缺失时自动降级到 TPRO
 
 完整文件见 [`module/config/syfuse.conf`](module/config/syfuse.conf)。每个键都有类型 / 取值范围 / 风险等级 / UI 位置。
 
+> **默认值不是随便定的。** 它们逐项对齐提示词 **6.4「必须沿用的具体参数」** ——
+> 6.1 规定「参数同值」是"复现"的四维判定之一，默认值漂移就等于复现失败。
+> 注意其中几条与"安全默认值"直觉相反：**DNS / 开屏 / 通知 / 面板 / 黑名单默认开**，
+> **MITM 与代理默认关** —— 这是 6.4 的硬规定（复现原项目行为）。
+> `tests/run_module_checks.sh` 有 20 条断言逐项守着这些默认值。
+>
+> 另：`DNS_UPSTREAM_ENC` 是 **URL 形态**（加密方式由 scheme 决定），不是枚举；
+> 三个更新周期的单位是**小时**不是分钟。这两条我最初都写错了，已按 6.4 改正。
+
 | 键 | 默认 | 类型 | 范围 | 风险 | UI 位置 |
 |---|---|---|---|---|---|
-| `DNS_ENABLE` | `0` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
+| `DNS_ENABLE` | `1` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
 | `MITM_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 广告与过滤 |
-| `SPLASH_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 广告与过滤 |
-| `NOTIFY_ENABLE` | `0` | bool | 0/1 | 进阶 | 设置 → 广告与过滤 |
-| `PANEL_ENABLE` | `0` | bool | 0/1 | 危险 | 设置 → 浏览器面板 |
+| `SPLASH_ENABLE` | `1` | bool | 0/1 | 危险 | 设置 → 广告与过滤 |
+| `NOTIFY_ENABLE` | `1` | bool | 0/1 | 进阶 | 设置 → 广告与过滤 |
+| `PANEL_ENABLE` | `1` | bool | 0/1 | 危险 | 设置 → 浏览器面板 |
 | `DNS_UPSTREAM` | `1.1.1.1` | string | IPv4/IPv6/URL | 进阶 | 设置 → 隐私与防泄漏 |
-| `DNS_UPSTREAM_ENC` | `plain` | enum | plain/doh/dot/doq | 进阶 | 同上 |
+| `DNS_UPSTREAM_ENC` | `https://dns.alicdn.com/dns-query` | string(URL) | scheme 决定 DoH/DoT/DoQ | 进阶 | 同上 |
 | `DNS_AUTO_UPDATE` | `0` | bool | 0/1 | 安全 | 同上 |
-| `DNS_UPDATE_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 同上 |
+| `DNS_UPDATE_INTERVAL` | `24` | int(**小时**) | 1..720 | 安全 | 同上 |
 | `DNSSRV_ENABLE` | `0` | bool | 0/1 | **危险** | 同上（接管 53 端口影响其他应用） |
 | `MITM_PORT` | `8443` | int | 1024..65535 | 危险 | 设置 → 广告与过滤 |
 | `MITM_HTTP_PORT` | `8080` | int | 1024..65535 | 危险 | 同上 |
@@ -645,15 +654,15 @@ UI 显示当前可用引擎并允许切换；全部缺失时自动降级到 TPRO
 | `PROXY_ENABLE` | `0` | bool | 0/1 | 安全 | 首页大开关 |
 | `PROXY_PORT` | `2080` | int | 1024..65535 | 安全 | 设置 → 隧道 → 代理 |
 | `PROXY_CORE` | 空 | string | 内核标识 | 进阶 | 设置 → 模块与特权 |
-| `PROXY_LEAK` | `1` | bool | 0/1 | 进阶 | 设置 → 隐私与防泄漏 |
-| `PROXY_SUB_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 配置 → 订阅 |
-| `BLACKLIST_ENABLE` | `0` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
+| `PROXY_LEAK` | `0` | bool | 0/1 | 进阶 | 设置 → 隐私与防泄漏 |
+| `PROXY_SUB_INTERVAL` | `24` | int(**小时**) | 1..720 | 安全 | 配置 → 订阅 |
+| `BLACKLIST_ENABLE` | `1` | bool | 0/1 | 安全 | 设置 → 广告与过滤 |
 | `ENGINE_HEURISTIC` | `0` | bool | 0/1 | 进阶 | 同上（可能误拦） |
 | `ENGINE_STRICT_SCOPE` | `1` | bool | 0/1 | 进阶 | 同上 |
 | `ENGINE_CLIENT` / `ENGINE_CTAG` | 空 | string | — | 进阶 | 同上（对应 `$client=` / `$ctag=`） |
 | `HOSTS_EXTRA` | 空 | string | — | 进阶 | 配置 → Hosts |
-| `RULES_REPO` / `RULES_BRANCH` / `RULES_MIRROR` | 空 / `main` / 空 | string | — | 安全 | 设置 → 更新 |
-| `SCRIPT_UPDATE_INTERVAL` | `1440` | int(分) | 5..10080 | 安全 | 设置 → 脚本与 Hook |
+| `RULES_REPO` / `RULES_BRANCH` / `RULES_MIRROR` | **空**（由 `set_owner.sh` 运行时填入）/ `main` / 空 | string | — | 安全 | 设置 → 更新 |
+| `SCRIPT_UPDATE_INTERVAL` | `24` | int(**小时**) | 1..720 | 安全 | 设置 → 脚本与 Hook |
 | `HOOK_ENABLE` | `0` | bool | 0/1 | **危险** | 设置 → 脚本与 Hook |
 | `HOOK_ENGINE` | `auto` | enum | auto/zygisk/lsposed/apatch/ldpreload/ptrace | 危险 | 同上 |
 | `HOOK_APPS` | 空 | string | 逗号分隔包名 | 危险 | 同上（**空=不 Hook 任何应用**） |

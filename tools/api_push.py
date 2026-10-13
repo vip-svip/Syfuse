@@ -78,17 +78,19 @@ def main():
     print(f"\n差异文件 {len(diff.splitlines())} 个:")
     for line in diff.splitlines():
         parts = line.split()
-        mode, sha, status = parts[1], parts[3], parts[4]
+        old_mode, new_mode, sha, status = parts[0][1:], parts[1], parts[3], parts[4]
         path = line.split("\t", 1)[1]
         if status == "D":
-            entries.append({"path": path, "mode": mode, "type": "blob", "sha": None})
+            # 删除条目必须用**旧模式**：新模式的 000000 会被 API 拒绝
+            # （422 Must supply a valid tree.mode）。这是实测踩到的。
+            entries.append({"path": path, "mode": old_mode, "type": "blob", "sha": None})
             print(f"  删除 {path}")
         else:
             content = git("cat-file", "blob", sha, binary=True)
             import base64
             b = api(base, tok, f"/repos/{repo}/git/blobs", "POST",
                     {"content": base64.b64encode(content).decode(), "encoding": "base64"})
-            entries.append({"path": path, "mode": mode, "type": "blob", "sha": b["sha"]})
+            entries.append({"path": path, "mode": new_mode, "type": "blob", "sha": b["sha"]})
             print(f"  上传 {path}  {len(content)}B")
 
     new_tree = api(base, tok, f"/repos/{repo}/git/trees", "POST",
@@ -102,16 +104,14 @@ def main():
 
     # 用 git 的格式化输出取身份 —— 不要手工解析 commit 对象
     # （手工解析曾把署名首字母吃掉，把 vip-svip 变成 ip-svip）
-    ident = {
-        "name": git("log", "-1", "--format=%an"),
-        "email": git("log", "-1", "--format=%ae"),
-        "date": git("log", "-1", "--format=%aI"),
-    }
-    cident = {
-        "name": git("log", "-1", "--format=%cn"),
-        "email": git("log", "-1", "--format=%ce"),
-        "date": git("log", "-1", "--format=%cI"),
-    }
+    # **必须 strip**：git 的输出带尾换行，直接送进 API 会得到
+    # 422 "name can't contain a newline character"。这是实测踩到的。
+    def one(fmt):
+        return subprocess.run(["git", "log", "-1", "--format=" + fmt],
+                              capture_output=True, check=True, text=True).stdout.strip()
+
+    ident = {"name": one("%an"), "email": one("%ae"), "date": one("%aI")}
+    cident = {"name": one("%cn"), "email": one("%ce"), "date": one("%cI")}
     msg = subprocess.run(["git", "log", "-1", "--format=%B"], capture_output=True,
                          check=True, text=True).stdout
 

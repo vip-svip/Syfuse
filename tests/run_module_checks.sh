@@ -335,6 +335,52 @@ fi
 [ -f .github/workflows/ci.yml ] && pass "CI 工作流存在" || pend "CI 工作流缺失"
 
 # ---------------------------------------------------------------------------
+head2 "6.4 必须沿用的具体参数（复现硬指标）"
+# 6.1 规定「参数同值」是"复现"的四维判定之一。默认值一旦漂移，
+# 复现就名存实亡 —— 而默认值是最容易在重构中被顺手改掉的东西。
+# 所以这里逐条断言。
+CONF="module/config/syfuse.conf"
+check_kv() { # $1=键 $2=期望值 $3=依据
+  local got
+  got="$(grep -E "^$1=" "$CONF" 2>/dev/null | head -1 | cut -d= -f2)"
+  if [ "$got" = "$2" ]; then
+    pass "6.4 $1=$2（$3）"
+  else
+    fail "6.4 $1 应为 $2，实际 \"$got\"（$3）"
+  fi
+}
+check_kv PANEL_PORT 8848 "面板端口"
+check_kv MITM_PORT 8443 "HTTPS 端口"
+check_kv MITM_HTTP_PORT 8080 "HTTP 端口"
+check_kv PROXY_PORT 2080 "代理端口"
+check_kv DNS_UPSTREAM 1.1.1.1 "DNS 上游"
+check_kv DNS_UPSTREAM_ENC "https://dns.alicdn.com/dns-query" "加密上游（URL 形态）"
+check_kv DNS_UPDATE_INTERVAL 24 "更新周期（小时）"
+check_kv PROXY_SUB_INTERVAL 24 "订阅周期（小时）"
+check_kv SCRIPT_UPDATE_INTERVAL 24 "脚本周期（小时）"
+check_kv DNS_ENABLE 1 "总开关默认"
+check_kv MITM_ENABLE 0 "总开关默认"
+check_kv SPLASH_ENABLE 1 "总开关默认"
+check_kv NOTIFY_ENABLE 1 "总开关默认"
+check_kv PANEL_ENABLE 1 "总开关默认"
+check_kv DNSSRV_ENABLE 0 "总开关默认"
+check_kv PROXY_ENABLE 0 "总开关默认"
+check_kv PROXY_LEAK 0 "总开关默认"
+check_kv BLACKLIST_ENABLE 1 "总开关默认"
+# RULES_REPO 必须留空（1.2 禁止硬编码账号；实际值由 set_owner.sh 填入）
+if grep -qE '^RULES_REPO=$' "$CONF"; then
+  pass "6.4 RULES_REPO 留空（账号由 set_owner.sh 运行时填入，未硬编码）"
+else
+  fail "RULES_REPO 非空 —— 可能硬编码了具体账号（违反 1.2）"
+fi
+# 开屏跳过延迟 100ms
+grep -q "skip 100" module/config/splash_rules.conf 2>/dev/null \
+  && pass "6.4 开屏跳过延迟 100ms" || fail "开屏跳过延迟不是 100ms"
+# 键的并集：SY 与 SY-Fusion 的键都要能接受
+for k in ENGINE_HEURISTIC ENGINE_STRICT_SCOPE ENGINE_CLIENT ENGINE_CTAG HOSTS_EXTRA; do
+  grep -qE "^$k=" "$CONF" && pass "并集：含 SY-Fusion 专有键 $k" || fail "并集：缺少 SY-Fusion 专有键 $k"
+done
+
 head2 "M1 模块骨架（提示词 13 部分 M1 完成判定）"
 # action.sh 必须有 11 个菜单项，一项不少
 if [ -f module/action.sh ]; then

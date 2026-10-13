@@ -42,12 +42,12 @@ TASKS
 | **T1** 内核宿主 AAR 构建链路（gomobile + NDK 前置检查，产出 `src/out/*.aar`） | `src/tools/build_aar.sh`、`kernel/` | 无 | `bash src/tools/build_aar.sh` 产出 AAR 且 `unzip -l` 含 `jni/<abi>/libgojni.so` | 60 min | **已完成** | **≈70 min**（含装 Go 1.26 + gomobile + NDK 27.2） |
 | **T2** `proxies.start/stop/reload/select/urlTest` 在 Go 侧真实现（先出最小可跑隧道） | `src/cmd/syfused/proxies.go`、`src/internal/netprobe/`、`src/syfuse/node.go` | ~~T1~~ 已解除 | `go test ./cmd/syfused/` 全绿（含 11 条新用例） | 60 min | **已完成** | **≈55 min** |
 | **T3** `UdsDataPlane` 接真实 `proxies.*`（去掉"未实现"路径）并补往返断言 | `engine/.../UdsDataPlane.kt`、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt` | T2 ✅ | `:daemon-protocol:test` 全绿且新增隧道往返用例 | 45 min | **已完成**（`UdsDataPlane` 已接真实方法并如实区分 failed / not_linked；参数名对齐 `configJson`/`profileId`/`node`） | **≈25 min** |
-| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/node/ShareLink.kt`、`domain/src/test/.../node/ShareLinkTest.kt` | 无 | `source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | **未开始**（子代理尝试失败，见下） | — |
-| **T4a** 分享链接：`ss` / `ssr` / `vmess` 三协议 + 往返 | 同上（同一文件，故 T4a→T4b→T4c **串行**） | 无 | `:domain:test --tests '*ShareLink*'` 中这三个协议的用例全绿 | 30 min | 未开始 | — |
-| **T4b** 分享链接：`vless` / `trojan` / `hysteria2` 三协议 + 往返 | 同上 | T4a | 同上 | 30 min | 未开始 | — |
-| **T4c** 分享链接：`http`(`https`) / `socks5` + 全 8 协议往返矩阵 + 与 Go 侧行为对齐核对 | 同上 | T4b | 同上，且 8 协议往返矩阵全绿 | 30 min | 未开始 | — |
-| **T5** M4：订阅解析与 diff（`base64`/`clash yaml` 两种形态，diff 出新增/删除/改动） | `domain/node/Subscription.kt`、`domain/src/test/.../SubscriptionTest.kt` | T4 | `:domain:test --tests '*Subscription*'` 全绿 | 60 min | 未开始 | — |
-| **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | 未开始 | — |
+| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/node/ShareLink.kt`、`domain/src/test/.../node/ShareLinkTest.kt` | 无 | `source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | **已完成** | **≈45 min**（`ShareLink.kt` 697 行 + `ShareNode.kt` 220 行；**28 用例 / 0 失败**，实测 8 协议全覆盖） |
+| **T4a** 分享链接：`ss` / `ssr` / `vmess` 三协议 + 往返 | 同上（同一文件，故 T4a→T4b→T4c **串行**） | 无 | `:domain:test --tests '*ShareLink*'` 中这三个协议的用例全绿 | 30 min | **已完成**（并入 T4 一次落地） | — |
+| **T4b** 分享链接：`vless` / `trojan` / `hysteria2` 三协议 + 往返 | 同上 | T4a | 同上 | 30 min | **已完成**（并入 T4 一次落地） | — |
+| **T4c** 分享链接：`http`(`https`) / `socks5` + 全 8 协议往返矩阵 + 与 Go 侧行为对齐核对 | 同上 | T4b | 同上，且 8 协议往返矩阵全绿 | 30 min | **已完成**（并入 T4 一次落地） | — |
+| **T5** M4：订阅解析与 diff（`base64`/`clash yaml` 两种形态，diff 出新增/删除/改动） | `domain/node/Subscription.kt`、`domain/src/test/.../SubscriptionTest.kt` | T4 ✅ | `:domain:test --tests '*Subscription*'` 全绿 | 60 min | **已完成** | **≈35 min**（`Subscription.kt` 274 行；**17 用例 / 0 失败**） |
+| **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | **部分完成**（语料已扩到 250 行、网络规则 115 条，双语言断言一致；逐行 `expect.tsv` 预言机**尚未补全**） | **≈50 min** |
 
 **并行批次**（2.11-B，常驻 3～6 个，同文件不并行）：
 - 批次 1（无依赖）：**T0 ✅ / T7 ✅**；**T4a→T4b→T4c**（串行，同一文件）；**T6**；**T1** 受阻（缺 gomobile + NDK）
@@ -60,40 +60,47 @@ TASKS
   下一轮改策略：由主代理自己做，并把 T4 拆成 T4a/b/c 三个 30 分钟的单元。
 
 ```
-NEXT_ACTION: T0 / T7 已完成并推送（`636983e`）。下一轮**由主代理自己做**批次 1 剩余单元，
-             **不再用子代理做代码单元**（本轮实测子代理零产出，见「第 5 轮」第 11 条）。
-             顺序（同文件，必须串行）：**T4a → T4b → T4c**，其间可并行做 **T6**（不同文件）。
-             - **T4a**：新建 `domain/src/main/kotlin/.../domain/node/ShareLink.kt`
-               （先只做 `ss` / `ssr` / `vmess`）+ `domain/src/test/.../domain/node/ShareLinkTest.kt`。
-               **语义真相是 Go 侧 `src/syfuse/node.go`**（已有 8 个 parse 函数 + 28 个用例），
-               Kotlin 实现必须与它行为一致（SIP002 base64 userinfo、legacy 全 base64、
-               percent-encoding、vmess 端口是字符串或数字、URL-safe base64、默认节点名等）。
-               验收：`source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'`。
-             - **T4b**：追加 `vless`（含 REALITY）/ `trojan`（含 security=none）/ `hysteria2`（含 `hy2` 别名）。
-             - **T4c**：追加 `http`(`https`) / `socks5`，补全 8 协议往返矩阵，并与 Go 侧行为逐条核对。
-             - **T6**：`tests/corpus/*` + `tests/expect.tsv` 从 38 条期望扩到 ≥120 条。
-               验收：`bash tests/run_kernel.sh` + `syfuse_gradle :core:rule:test` 两侧同时绿且条数一致。
-             收口：主代理串行跑 `bash tests/run_unit.sh` 取集成证据 → 全量门禁 → 提交 → 推送。
-             之后进批次 2 的 **T5**（订阅解析与 diff，依赖 T4c）；T2/T3 仍等 T1（缺 gomobile + NDK）。
+NEXT_ACTION: 第 6 轮已完成 **T1 / T2 / T3 / T4(+a/b/c) / T5** 并推送，Release v0.1.0 已发布。
+             下一轮按用户**最高优先级指令**执行：**先把模块与 App 的功能全部做完**，
+             门禁与完整验证**推迟到最后**（用户明确要求）。
+             用户原话：「门禁等所有东西做好最后再验证，你先把模块和app所有功能都做完，做快点，
+             最后再开始按 F:/Ai/Syfuse-完美提示词.md 优化，apk图标做好看点，
+             模块成品上传到GitHub的Releases里面」。
+             - **已完成**：模块成品上传 Release ✅（5 个资产，sha256 与 update.json 实测一致）；
+               APK 图标重绘 ✅（双环+透镜，含 round 图标，遵守 72×72 安全区）。
+             - **优先补**：`tests/expect.tsv` 逐行预言机（T6 遗留）；删除临时探针残留。
+             - **然后按 M4→M14 推进**：订阅 UI/仓库接线、规则数据面、DNS、模块+QuickJS 脚本、
+               MITM/抓包、日志/统计、Hook/特权、防泄漏、增强项（开屏跳过/通知净化/网络封禁/
+               浏览器面板/CLI）、设置分页补齐。
+             收口：**最后**统一跑门禁（本轮刻意不跑，遵从用户优先级）。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）
-          ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2
-             （已在 PENDING-EXTERNAL.md 第 5 节写清"缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果"）
-          ③ 仓库 private + 无 Release → 自更新链路（18.5）与 update.json 匿名可达性无法验证
-          ④ 【T0 已解决】门禁脚本与提示词附录不一致 —— 已逐字节重同步并修掉附录自身 4 处缺陷
-             （E1–E4），两版门禁 exit 0、需求 38/38。**遗留一条已知局限**：门禁第⑦组
-             依赖随母版分发的 tools/sync_appendix.ps1，本仓库没有它 → 那一组只 WARN 跳过。
-             已用 tests/run_appendix_sync.sh（含 3 次变异/护栏自证）做补偿控制并挂进 CI。
-          ⑤ 【T7 已解决】第⑥组在 Windows 上 54 s → 改成 bash 内建读取后 **13.3 s**，
-             检查对象与断言条数不变（26 个 `.sh` × 2 条 + 2 个 `.ps1` × 1 条 = 54 条）。前置的 12 组等价性矩阵
-             当场抓出第一版的错误（$(<file) 会吃掉末尾 CRLF），详见 EVIDENCE §14.11。
-          ⑥ 【已解决】`git push` 曾因 GitHub 443 不可达失败三次；连通性恢复后已推送成功
-             （`626befd..32f9fa5`，origin/main 与本地同步）。令牌用 `-c http.extraheader`
-             逐命令注入，**未落盘**（未写 remote、未设 credential.helper）。
-ROUND_TIME: 第 5 轮 ≈3h40m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min 达标；
-             子代理尝试 T4/T6 约 30 min 后确认零产出并终止）
-UNIT: 第 5 轮交付 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 12 组等价性矩阵）；
-      **T4/T6 未交付**（子代理零产出，已拆成 T4a/b/c 并改为主代理自做）
-LAST_UPDATED: 2026-10-13T06:20Z (2026-10-13 14:20 +0800)
+           ② 【已解决】gomobile + NDK 前置 —— 已装 Go 1.26.9 + gomobile + NDK 27.2.12479018，
+              T1 产出 3 个 ABI 的 AAR（`jni/<abi>/libgojni.so`）。已顺带修掉 go.mod 被误写
+              require / 生成 go.sum 的问题（会把"零依赖"断言打穿），并删掉 go.sum。
+           ③ 【已解决】仓库已 public，Release v0.1.0 已创建并上传 5 个资产；
+              实测 `curl` 下载 `syfuse-0.1.0.zip` 返回 200，sha256 与 `update.json` 一致
+              ——**自更新链路已真正走通**，不再是"无法验证"。
+           ④ 【T0 已解决】门禁脚本与提示词附录不一致 —— 已逐字节重同步并修掉附录自身 4 处缺陷
+              （E1–E4），两版门禁 exit 0、需求 38/38。**遗留一条已知局限**：门禁第⑦组
+              依赖随母版分发的 tools/sync_appendix.ps1，本仓库没有它 → 那一组只 WARN 跳过。
+              已用 tests/run_appendix_sync.sh（含 3 次变异/护栏自证）做补偿控制并挂进 CI。
+           ⑤ 【T7 已解决】第⑥组在 Windows 上 54 s → 改成 bash 内建读取后 **13.3 s**，
+              检查对象与断言条数不变（26 个 `.sh` × 2 条 + 2 个 `.ps1` × 1 条 = 54 条）。前置的 12 组等价性矩阵
+              当场抓出第一版的错误（$(<file) 会吃掉末尾 CRLF），详见 EVIDENCE §14.11。
+           ⑥ 【已解决】`git push` 曾因 GitHub 443 不可达失败三次；连通性恢复后已推送成功。
+              令牌用 `-c http.extraheader` 逐命令注入，**未落盘**（未写 remote、未设 credential.helper）。
+           ⑦ 【第 6 轮新发现并已修】模块 ZIP 可执行位丢失 —— Windows/NTFS 上
+              `os.stat().st_mode` 恒为 0666，原实现把 0666 写进 ZIP，脚本与守护进程
+              在真机上无法执行（模块等于废包）。已改为按显式白名单写 0755/0644，
+              并加打包现场自检（读回 ZIP 断言 9 个关键条目）。详见提交 0fe4e1e。
+ROUND_TIME: 第 6 轮 ≈2h10m（T1 ≈70 min / T2 ≈55 min / T3 ≈25 min；T4+T5 合并落地 ≈80 min；
+             打包与 Release ≈35 min，其中可执行位缺陷的定位与修复是意外收获）
+UNIT: 第 6 轮交付 T1（AAR 构建链路打通，3 ABI）、T2（proxies.* 真实现 + 11 用例 + 变异验证）、
+      T3（UdsDataPlane 接真实方法）、T4/T4a-c（8 协议分享链接，28 用例）、T5（订阅解析，17 用例）、
+      4 处规则引擎静默丢规则缺陷的修复（Kotlin/Go 双实现同步）、APK 图标重绘、
+      模块 ZIP 权限位缺陷修复、Release v0.1.0 发布（5 资产，含 sha256 实测核对）。
+      `:domain:test` 实测 **75 用例 / 0 失败**。
+LAST_UPDATED: 2026-10-13T07:40Z (2026-10-13 15:40 +0800)
 ```
 
 ---

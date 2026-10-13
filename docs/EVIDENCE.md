@@ -1185,8 +1185,9 @@ $ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-pu
 > 该脚本在无 `GITHUB_TOKEN`/`GH_TOKEN` 时 `exit 3 = SKIP`（**不是通过**）。
 > 本次是带 token 运行的结果；CI 上没有 token 时这一步会 SKIP，属预期。
 
-- 推送结果：`925a9ce..dda085c  main -> main`，本地 HEAD 与远程 `refs/heads/main` 一致
-  （`dda085c6b4f5c79fea6458e56cef81e5279f4102`，逐字符比对）
+- 推送结果：本地 HEAD 与远程 `refs/heads/main` **逐字符一致**（`git rev-parse HEAD` vs `git ls-remote`）。
+  这里刻意**不写死 commit 哈希** —— 本文件本身就是被推送的内容之一，写死的话它描述的是
+  "上一个提交"，每推一次就过期一次。要核对请直接跑上面两条命令。
 - `.git/config` 未落盘令牌（`grep -c 'github_pat\|extraheader' .git/config` → 0）
 - Release 数 0 → 自更新链路（18.5）尚不可端到端验证，已登记在 `PENDING-EXTERNAL.md`
 

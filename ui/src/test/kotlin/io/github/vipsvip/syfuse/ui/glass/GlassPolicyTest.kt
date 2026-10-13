@@ -192,7 +192,7 @@ class GlassPolicyTest {
     }
 
     @Test
-    fun `丢帧率超过 3% 也判超标`() {
+    fun `丢帧率超过阈值也判超标`() {
         val monitor = FrameMonitor()
         // 帧耗时都在预算内不会丢帧，所以这里用"预算很小"制造丢帧：
         // 30 帧里 2 帧超预算 → 丢帧率 6.67% > 3%。

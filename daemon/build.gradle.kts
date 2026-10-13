@@ -21,6 +21,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // 契约测试是纯 JVM 的（读 Go 源码 + 跑 Kotlin 序列化器，不碰 Android 运行时），
+    // 用 JUnit 5 跑。不显式声明 useJUnitPlatform() 的话 Gradle 会按 JUnit 4 找测试，
+    // 结果是"任务成功、0 个用例"—— 那是最危险的一种绿。
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

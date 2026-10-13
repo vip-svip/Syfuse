@@ -27,6 +27,10 @@ if [ -n "$ANDROID_HOME" ]; then
   # 注意：这里验证的是**策略逻辑**，不是"模糊是否真的生效"——后者需要真机，
   # 由 tests/ui_glass_perf.sh 负责（无设备时 SKIP）。
   TASKS+=(":ui:testDebugUnitTest")
+  # :daemon 的跨语言协议契约测试：读 Go 源码核对 Kotlin 侧协议定义是否漂移。
+  # 同样不碰 Android 运行时（DaemonClient 用 LocalSocket，不在测试范围内；
+  # 测的是 DaemonProtocol 的常量与序列化字段名）。
+  TASKS+=(":daemon:testDebugUnitTest")
 fi
 
 echo

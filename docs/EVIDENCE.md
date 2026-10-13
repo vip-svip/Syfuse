@@ -3,10 +3,10 @@
 > 提示词 2.9 / 2.10 第 6 条：**证据必须落盘**，不能只活在聊天里。
 > 本文件的每一段都是命令的**原始输出**（未改写、未摘要），可直接复现。
 >
-> - 采集时间：2026-10-13T02:26:39Z
+> - 采集时间：2026-10-13T03:15:00Z（第 3 轮重采）
 > - 采集环境：Windows 10 / JDK 21.0.12.1+1 / Go 1.23.4 / Gradle 8.11.1 / Android SDK platform-35 + build-tools 35.0.0
 > - 采集时 HEAD：``（即本文件所在提交）
-> - 跟踪文件数：187
+> - 跟踪文件数：188
 > - `adb devices`：**空**（无真机 → 所有设备类检查 `exit 3 = SKIP`，SKIP 不是通过）
 
 ---
@@ -15,23 +15,32 @@
 
 | 检查 | 退出码 | 结论 |
 |---|---|---|
-| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 5 项） |
+| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项） |
 | 交付门禁（README.md） | **0** | 全部通过（WARN 2 项），需求项 36 条缺失 0 条 |
-| `tools/scan_secrets.py` | **0** | PASS — 无禁止项 |
-| `tests/run_unit.sh`（JVM 单测） | **0** | 5 套件 / 54 用例 / 失败 0 |
-| `cd src && go test ./...` | **0** | 3 包全绿 |
+| `tools/scan_secrets.py` | **0** | PASS — 无禁止项（WARN 35 条，豁免 19 条） |
+| `tests/run_unit.sh`（JVM 单测） | **0** | **6 套件 / 68 用例 / 失败 0 / 跳过 0** |
+| `cd src && go test ./...` | **0** | 3 包全绿；**88 用例 = 86 PASS + 2 SKIP + 0 FAIL** |
 | `tests/run_module_checks.sh` | **0** | PASS=101 FAIL=0 PEND=1 |
 | `tests/run_restore_check.sh` | **0** | PASS=17 FAIL=0 |
-| `tests/ui_assets_check.sh` | **0** | PASS=8 FAIL=0 |
+| `tests/ui_assets_check.sh` | **0** | PASS=8 FAIL=0（内联文案 372 处，PEND 不判失败） |
 | `tests/ui_parity_check.sh` | **0** | PASS=27 FAIL=0 PEND=6 |
+| `tests/perf_rule_engine.sh` | **0** | 规则引擎 p99 中位数 0.6962 / 0.8033ms（预算 <1ms，达标） |
 | `bash package.sh` | **0** | 4 个产物 + SHA-256 自校验 PASS |
+| `tools/verify_remote.py` | **0** | PASS（private / main / GPL-3.0 / 关键文件 23-23 / Release 0） |
 | `tests/run_e2e.sh` | 3 | SKIP（无设备） |
 | `tests/run_feature_matrix.sh` | 3 | PASS=18 FAIL=0 SKIP=1（无设备） |
 | `tests/run_leak_check.sh` | 3 | PASS=8 FAIL=0 PEND=1 SKIP=1（无设备） |
 | `tests/run_hook_check.sh` | 3 | PASS=10 FAIL=0 PEND=3 SKIP=1（无设备） |
-| `tests/ui_runtime_check.sh` / `ui_screenshot.sh` / `ui_glass_perf.sh` | 3 | SKIP（无设备） |
+| `tests/ui_runtime_check.sh` / `ui_screenshot.sh` / `ui_glass_perf.sh` | 3 | SKIP（无设备；`ui_glass_perf` 沙箱部分 PASS=16） |
 
 > `PEND` 表示里程碑未完成，**不是通过**；`SKIP` 同理。退出码约定见 `PROGRESS.md`。
+>
+> **JVM 用例数从 54 涨到 68**，增量全部来自本轮新增的 `:daemon` 跨语言协议契约测试（14 条）。
+> **Go 用例数从 86 涨到 88**：本轮把 UDS 相关断言从"按 OS 名跳过"改为"按能力探测跳过"，
+> 于是它们在 Windows 上开始**真实执行**（其中 2 条 POSIX 权限位断言仍按能力探测跳过）。
+>
+> **注意：`go test` 的 86 PASS 不含 2 条 SKIP。** 早先本表与 README 写"84 用例"是把跳过项也算了进去，
+> 数字对不上；现在统一按 `run_kernel.sh` 打印的口径（`用例=86 失败=0`）+ 单独标注跳过数。
 
 ---
 
@@ -190,56 +199,53 @@
 ## 3. 密钥与令牌扫描
 
 ```text
+$ python tools/scan_secrets.py
 扫描文件数: 177（git 跟踪）
 
--- WARN (24) --
-  README.md:694: [疑似内网/私有地址] 127.0.0.1
-  README.md:710: [疑似内网/私有地址] 10.0.0.0
+-- WARN (35) --
+...
+[SECRETS] PASS — 无禁止项（WARN 35 条，豁免 19 条）
+```
+
+退出码 **0**。35 条 WARN 按来源分类（无一条是禁止项；`scan_secrets.py` 的 FAIL 条件是
+"命中禁止模式"，WARN 只是提示人工确认）：
+
+| 类别 | 条数 | 说明 |
+|---|---|---|
+| 疑似内网/私有地址 | 33 | 其中 **22 条来自 `docs/EVIDENCE.md` 自身**（本文件引用这些地址所产生的自引用，见下） |
+| 疑似订阅链接（含凭据） | 2 | 见下，已逐条确认是示例/夹具 |
+| 行内显式豁免 | 19 | 源码/测试里用显式标记声明"这是示例，不是凭据" |
+
+**非自引用的告警全文**（即去掉 `docs/EVIDENCE.md` 引用自身的 22 条后剩下的 13 条）：
+
+```text
+  README.md:695: [疑似内网/私有地址] 127.0.0.1
+  README.md:711: [疑似内网/私有地址] 10.0.0.0
   core/rule/src/main/kotlin/io/github/vipsvip/syfuse/core/rule/RuleParser.kt:28: [疑似内网/私有地址] 127.0.0.1
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:53: [疑似内网/私有地址] 10.0.0.0
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:54: [疑似内网/私有地址] 10.10.0.0
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:56: [疑似内网/私有地址] 10.10.5.5
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:57: [疑似内网/私有地址] 10.20.5.5
-  docs/EVIDENCE.md:199: [疑似内网/私有地址] 127.0.0.1
-  docs/EVIDENCE.md:200: [疑似内网/私有地址] 10.0.0.0
-  docs/EVIDENCE.md:201: [疑似内网/私有地址] 127.0.0.1
-  docs/EVIDENCE.md:202: [疑似内网/私有地址] 10.0.0.0
-  docs/EVIDENCE.md:203: [疑似内网/私有地址] 10.10.0.0
-  docs/EVIDENCE.md:204: [疑似内网/私有地址] 10.10.5.5
-  docs/EVIDENCE.md:205: [疑似内网/私有地址] 10.20.5.5
-  docs/EVIDENCE.md:208: [疑似内网/私有地址] 127.0.0.1
-  docs/EVIDENCE.md:209: [疑似内网/私有地址] 10.10.0.0
-  docs/EVIDENCE.md:210: [疑似内网/私有地址] 127.0.0.1
-  docs/EVIDENCE.md:211: [疑似内网/私有地址] 10.10.5.5
   src/syfuse/node.go:286: [疑似订阅链接（含凭据）] ss://m…port (len=30)
   src/syfuse/node_test.go:472: [疑似订阅链接（含凭据）] ss://S…8388 (len=33)
   tests/corpus/01_syntax_mixed.txt:32: [疑似内网/私有地址] 127.0.0.1
   tests/corpus/01_syntax_mixed.txt:39: [疑似内网/私有地址] 10.10.0.0
   tests/expect.tsv:30: [疑似内网/私有地址] 127.0.0.1
   tests/expect.tsv:35: [疑似内网/私有地址] 10.10.5.5
-
--- 豁免 (19) --
-  SECURITY.md:91: [豁免]
-  SECURITY.md:92: [豁免]
-  SECURITY.md:97: [豁免]
-  SECURITY.md:98: [豁免]
-  SECURITY.md:104: [豁免]
-  src/syfuse/node.go:288: [豁免]
-  src/syfuse/node.go:289: [豁免]
-  src/syfuse/node_test.go:65: [豁免]
-  src/syfuse/node_test.go:66: [豁免]
-  src/syfuse/node_test.go:250: [豁免]
-  src/syfuse/node_test.go:251: [豁免]
-  src/syfuse/node_test.go:262: [豁免]
-  src/syfuse/node_test.go:263: [豁免]
-  src/syfuse/node_test.go:294: [豁免]
-  src/syfuse/node_test.go:295: [豁免]
-  src/syfuse/node_test.go:470: [豁免]
-  src/syfuse/node_test.go:471: [豁免]
-  src/syfuse/node_test.go:513: [豁免]
-  src/syfuse/node_test.go:514: [豁免]
-[SECRETS] PASS — 无禁止项（WARN 24 条，豁免 19 条）
 ```
+
+逐条结论：
+
+- **内网地址（11 条）**：`127.0.0.1` 是本地回环（DNS/fake-ip 与规则语料必须用到），
+  `10.x` 是 RFC1918 私有段（`Ipv4CidrTrie` 的测试与规则语料必须用到）。**都是功能必需的，不是泄漏。**
+- **订阅链接（2 条）**：`node.go:286` 是**文档注释里的示例**，`node_test.go:472` 是**测试夹具**，
+  都用于验证 `ParseNodeURI` 的解析路径。已确认为构造值，非真实节点凭据。
+- **豁免（19 条）**：源码/测试中显式标记的"这是示例"行；扫描器要求显式标记，不允许静默放过。
+
+**关于自引用（22 条）**：本文件按 2.9 要求逐字引用扫描输出，而引用的内容本身含有内网地址字面量，
+于是下一次扫描会在 `docs/EVIDENCE.md` 里再找到它们 —— 这是一个**会自我增长**的伪影。
+本次的处理是：**如实说明其来源与条数，但不把 22 行重复贴进来**（贴了只会让下一轮变成更多）。
+这不是隐瞒 —— 上表已给出确切条数与文件，任何人跑一次 `python tools/scan_secrets.py` 即可复核。
 
 ---
 
@@ -250,7 +256,7 @@
 :: Gradle: /f/Ai/Syfuse/gradlew
 :: Android SDK: /c/Users/admin/.workbuddy-ai/toolchain/android-sdk
 
-:: 执行: :core:rule:test :domain:test :data:testDebugUnitTest :ui:testDebugUnitTest
+:: 执行: :core:rule:test :domain:test :data:testDebugUnitTest :ui:testDebugUnitTest :daemon:testDebugUnitTest
 -------------------------------------------------------------------
 Starting a Gradle Daemon, 1 incompatible and 10 stopped Daemons could not be reused, use --status for details
 > Task :ui:preBuild UP-TO-DATE
@@ -400,24 +406,142 @@ w: file:///F:/Ai/Syfuse/ui/src/test/kotlin/io/github/vipsvip/syfuse/ui/glass/Gla
 > Task :ui:transformDebugUnitTestClassesWithAsm
 > Task :ui:testDebugUnitTest
 
-BUILD SUCCESSFUL in 1m 2s
-48 actionable tasks: 48 executed
+BUILD SUCCESSFUL in 1m 4s
+63 actionable tasks: 63 executed
 -------------------------------------------------------------------
-[UNIT SUMMARY] 套件文件=5 用例=54 失败=0 错误=0 跳过=0
+[UNIT SUMMARY] 套件文件=6 用例=68 失败=0 错误=0 跳过=0
 [UNIT RESULT] PASS
 ```
+
+本轮新增的第 6 个套件是 `:daemon:testDebugUnitTest`（跨语言协议契约测试）。它单独跑的输出：
+
+```text
+> Task :daemon:compileDebugUnitTestKotlin
+> Task :daemon:testDebugUnitTest
+
+BUILD SUCCESSFUL in 32s
+21 actionable tasks: 21 executed
+```
+
+```text
+tests=14 failures=0 errors=0 skipped=0
+  - Response 的 JSON 字段名与 Go 侧一致()
+  - 数据目录与 Go 侧的 base 默认值一致()
+  - 协议级错误码必须有本地翻译，内部错误码有意透传原文()
+  - 文件名常量在 Go 侧真实出现()
+  - 待实现方法与里程碑映射与 Go 侧一致()
+  - 还原清单路径与 Go 侧构造表达式一致()
+  - 待实现方法表没有被正则漏抓()
+  - 已实现方法集合与 Go 侧注册的处理器一致()
+  - 协议版本与 Go 侧一致()
+  - 每个待实现方法都带计划里程碑()
+  - Request 的 JSON 字段名与 Go 侧一致()
+  - 错误码集合与 Go 侧一致()
+  - 超时为正且不超过十秒()
+  - 已实现与待实现方法互斥()
+```
+
+### 变异测试：证明这些断言不是空转
+
+把 Kotlin 侧注入 3 处**故意的**协议漂移（协议版本 1→2、错误码 `unknown_method`→`unknownMethod`、
+已实现方法表多一个 `engine.restart`），然后重跑：
+
+```text
+> Task :daemon:testDebugUnitTest FAILED
+DaemonProtocolContractTest > 已实现方法集合与 Go 侧注册的处理器一致() FAILED
+DaemonProtocolContractTest > 协议版本与 Go 侧一致() FAILED
+DaemonProtocolContractTest > 错误码集合与 Go 侧一致() FAILED
+14 tests completed, 3 failed
+BUILD FAILED in 32s
+```
+
+还原后：
+
+```text
+BUILD SUCCESSFUL in 15s
+```
+
+3 处注入 → 精确命中 3 条断言，其余 11 条不受影响。**不做这一步就无法区分"断言有效"与"断言空转"。**
 
 ---
 
 ## 5. Go 侧构建与测试
 
+`tests/run_kernel.sh`（gofmt / vet / build / 测试 / 零依赖断言）：
+
 ```text
-?   	github.com/vip-svip/syfuse/src/cmd/syfused	[no test files]
-?   	github.com/vip-svip/syfuse/src/internal/logx	[no test files]
-ok  	github.com/vip-svip/syfuse/src/internal/ipc	(cached)
-ok  	github.com/vip-svip/syfuse/src/internal/manifest	(cached)
-ok  	github.com/vip-svip/syfuse/src/syfuse	(cached)
+Go: go version go1.23.4 windows/amd64
+模块: module github.com/vip-svip/syfuse/src
+
+== gofmt -l（应无输出） ==
+  [PASS] 全部文件已格式化
+
+== go vet ==
+  [PASS] vet 通过
+
+== go build ==
+  [PASS] 构建通过
+
+== go test ==
+  [PASS] 用例=86 失败=0
+
+== 零第三方依赖校验 ==
+  [PASS] go.mod 无 require，内核零第三方依赖
+  [PASS] 无 go.sum
+
+===========================================
+kernel-checks: PASS
+===========================================
 ```
+
+注意：`用例=86` 是 `--- PASS` 的行数，**不含跳过的 2 条**。实际用例总数为 88：
+
+```text
+PASS=86
+SKIP=2
+FAIL=0
+--- SKIP: TestTokenFile_PermissionsAre0600 (0.06s)
+--- SKIP: TestListen_SocketPermissionsAre0600 (0.07s)
+```
+
+两条跳过都是 **POSIX 权限位**断言（`Chmod(0600)` 后读回 0666，本机不实现权限位）。
+跳过方式是**能力探测**而不是 `runtime.GOOS == "windows"`：探测失败才跳过，
+跳过信息里打印探测到的具体错误。目标平台 Android/Linux 上这两条必须通过。
+
+### 本轮新增/修复的 UDS 断言（变异测试证明有效）
+
+原实现按 `runtime.GOOS == "windows"` 跳过全部 UDS 断言，注释称
+"Windows 上 `net.Listen("unix", ...)` 实测 bind 报 invalid argument"。**实测这句话不成立**：
+
+```text
+listen err=<nil>
+stat perm=666 mode=Srw-rw-rw- isSocket=true
+dial err=<nil>
+read err=<nil> got="pong"
+chmod err=<nil> permAfter=666
+openfile err=<nil>
+token perm=666
+dir perm=777
+```
+
+即：AF_UNIX 的 listen / dial / 回环读写 / `ModeSocket` 识别**全部可用**，只有权限位不可用。
+改用能力探测后，Windows 上真实执行的用例从 12 条涨到 14 条。
+
+**同时发现原来的"遗留 socket 清理"测试是空转的**：它用 `first.ln.Close()` 制造残留，
+而 Go 的 `UnixListener.Close()` 本身会 unlink 文件 —— 文件根本没留下，断言永远通过。
+改为 fork 一个只 bind、不 Close 就 `os.Exit` 的辅助进程（实测该进程退出后
+`stat` 仍能看到 `isSocket=true` 的残留文件，这才是崩溃残留的真实形态）。
+
+变异测试：把 `Listen()` 里的遗留清理逻辑移除 →
+
+```text
+--- FAIL: TestListen_CleansStaleSocket (0.25s)
+    ipc_test.go:472: 遗留 socket 未被清理，二次启动失败: listen unix ...\control.sock:
+    bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+FAIL
+```
+
+还原 → `ok github.com/vip-svip/syfuse/src/internal/ipc 0.348s`。
 
 ---
 
@@ -941,10 +1065,14 @@ hook-check 汇总: PASS=10 FAIL=0 PEND=3 SKIP=1
 
 **产物与哈希**
 
-- 模块 ZIP：`dist/syfuse-0.1.0.zip`，? 字节，23 个条目
-- 模块 ZIP SHA-256：`fe8967108bbd1f5f09b14cef5ee3a4daf3c72d7465faecbcabf01ce2390ad556`（与 `update.json` 的 `sha256` 字段一致）
-- 分 ABI APK：`Syfuse-v0.1.0-arm64-v8a.apk` / `-armeabi-v7a.apk` / `-x86_64.apk`
+- 模块 ZIP：`dist/syfuse-0.1.0.zip`，**4,555,719 字节（4.34 MB）**，23 个条目
+- 模块 ZIP SHA-256：`67023422ecd63e92e35413df2d41f4a5527649e629b75232bafbe69b00882aaa`（与 `update.json` 的 `sha256` 字段一致）
+- 分 ABI APK：`Syfuse-v0.1.0-arm64-v8a.apk`（1,362,138 字节 / 1.30 MB）/ `-armeabi-v7a.apk`（1,359,446）/ `-x86_64.apk`（1,361,244）
 - 清单：`dist/MANIFEST.sha256`，自校验 `条目: 4  校验通过: 4  不一致: 0  缺失: 0`
+
+> ZIP 的 SHA-256 **每次构建都会变**（内嵌的 APK 每次重建都不同）。因此不要把某个 SHA 当作
+> "这个版本的正确哈希"去比对历史值 —— 要比对的是 `update.json` 与同一次构建的产物是否一致，
+> 这一点由 `package.sh` 的第 6 步自校验强制。
 
 ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`service.sh`、`action.sh`、
 `uninstall.sh`、`bin/syfused-{arm64,arm,amd64}`、`apk/syfuse.apk`、
@@ -952,7 +1080,62 @@ ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`s
 
 ---
 
-## 11. 本轮修复项的回归证据
+## 10b. 规则引擎性能基准（`tests/perf_rule_engine.sh 1000000 5`）
+
+方法：**1 轮预热（丢弃）+ 5 轮测量 × 10 万次采样，取逐轮 p99 的中位数**。
+提示词第 11 部分原文要求"多轮取中位数（≥10 万次采样）"，此前只跑一轮。
+
+第一次运行（`2026-10-13T02:50:05Z`，5 轮但尚无预热轮）：
+
+```text
+[Benchmark] 第 1/5 轮: p50=0.7639ms p90=0.9820ms p99=1.3077ms max=5.1734ms 总耗时=76278ms
+[Benchmark] 第 2/5 轮: p50=0.6627ms p90=0.7547ms p99=0.7922ms max=5.3546ms 总耗时=67216ms
+[Benchmark] 第 3/5 轮: p50=0.6041ms p90=0.6574ms p99=0.6962ms max=5.2984ms 总耗时=60016ms
+[Benchmark] 第 4/5 轮: p50=0.5949ms p90=0.6577ms p99=0.6878ms max=6.6657ms 总耗时=60177ms
+[Benchmark] 第 5/5 轮: p50=0.6016ms p90=0.6609ms p99=0.6960ms max=5.2083ms 总耗时=60366ms
+[Benchmark] p99 逐轮: 1.3077 0.7922 0.6962 0.6878 0.6960ms
+[Benchmark] 中位数: p50=0.6041ms p90=0.6609ms p99=0.6962ms（p99 最小 0.6878 / 最大 1.3077，离散 89.0%）
+[Benchmark] 吞吐=1543 次/秒（按总耗时）
+[Benchmark] 预算 p99 < 1.0ms → 中位数 0.6962ms 达标（余量 30.4%）
+```
+
+第二次运行（`2026-10-13T02:57:36Z`，加入预热轮丢弃）：
+
+```text
+[Benchmark] 测量轮 4/5: p50=0.6765ms p90=0.7626ms p99=0.8033ms max=3.0863ms 总耗时=68133ms
+[Benchmark] 测量轮 5/5: p50=0.6815ms p90=0.7687ms p99=0.8150ms max=2.9921ms 总耗时=68569ms
+[Benchmark] p99 逐轮: 0.7864 0.7845 1.2108 0.8033 0.8150ms
+[Benchmark] p99 预热轮（已丢弃）: 0.7874ms
+[Benchmark] 中位数: p50=0.6765ms p90=0.7626ms p99=0.8033ms（p99 最小 0.7845 / 最大 1.2108，离散 53.1%）
+[Benchmark] 预算 p99 < 1.0ms → 中位数 0.8033ms 达标（余量 19.7%）
+```
+
+**结论**：两次独立运行的 p99 中位数 = **0.6962 / 0.8033 ms**，预算 `< 1 ms` → **达标，余量 19.7%~30.4%**。
+
+**必须同时说明的负面事实**（不写进"达标"里掩盖）：
+
+1. 10 个测量轮里有 **2 轮越线**（1.3077ms、1.2108ms）。中位数达标，但单轮偶有超线。
+2. **p50 已达 0.60~0.68 ms** —— 与 p99 同量级。这说明线性扫描压住的是**整个分布**，
+   不是只影响尾部。根因：`FilterEngine.collectCandidates` 对**每个**请求（含域名 Trie 命中的）
+   都把全部 10,000 条线性规则复制成新列表并逐条测试。
+3. 本机是桌面 Windows + HotSpot；**真机 Android 的 ART/GC 行为不同，必须重测**。
+
+**这一行被改过三次**（过程本身就是证据，保留以免重蹈）：
+
+| 版本 | 写法 | 为什么错 |
+|---|---|---|
+| 最初 | `预算 < 0.5 ms`，判定 ❌ | 0.5ms 是**自造**的，提示词原文是 `< 1ms`；据此把达标写成未达标 |
+| 第二次 | `预算 < 1 ms`，判定 ✅ 余量 3.5% | 预算改对了，但**拿单轮结果下结论**：那个 0.965ms 是暖机阶段的数字 |
+| 本次 | `预算 < 1 ms`，判定 ✅ 余量 19.7%~30.4% | 改为多轮中位数 + 丢弃预热轮 |
+
+单轮基准测到的**永远是 JIT/GC 收敛过程**：同一机器同一代码单轮 p99 = 0.9651 / 1.3183ms（相差 36%），
+而多轮后第 1 轮 1.3077ms、稳态 0.69ms 左右。原始逐轮记录见 `tests/perf_results.txt`（含作废段落的留痕）。
+
+---
+
+## 11. 修复项的回归证据
+
+### 第 2 轮
 
 | 修复 | 回归证据 |
 |---|---|
@@ -962,6 +1145,24 @@ ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`s
 | Go module path 指向不存在的仓库 | `src/go.mod` → `github.com/vip-svip/syfuse/src`，`go build`/`go test` 复验通过 |
 | 玻璃"超标两次提示用户"不可达 | 新增 `GlassPolicyTest`；修复前 `consecutiveViolations` 恒为 0（用例失败）→ 修复后用例通过 |
 | `tools/set_owner.sh` 超时 | 修复前 >180 s（超时被杀）→ 修复后 33 s，且幂等（`git diff` 无新增改动） |
+
+### 第 3 轮（本轮）
+
+| 修复 | 回归证据 |
+|---|---|
+| `ipc_test.go` 按 `GOOS` 跳过 UDS 断言（注释里的理由不成立） | 探测输出 `listen err=<nil> / dial err=<nil> / got="pong"`；改用能力探测后真实执行用例 12 → 14 条 |
+| `TestListen_CleansStaleSocket` 空转（`Close()` 会 unlink，造不出残留） | 改为 fork「只 bind 不 Close 就 `os.Exit`」的辅助进程；变异测试：移除清理逻辑 → 该用例失败，还原 → 通过 |
+| `DaemonProtocol.kt` 与 `ipc.go` 手工镜像、无任何强制同步机制 | 新增 14 条跨语言契约测试；变异测试：注入 3 处漂移 → 精确命中 3 条断言，还原 → 通过 |
+| `daemon` 模块缺 `useJUnitPlatform()`（测试根本不会跑） | 补前 `:daemon:testDebugUnitTest` 无测试被发现；补后 `tests=14 failures=0` |
+| 性能基准只跑一轮（违反第 11 部分"多轮取中位数"） | 单轮 p99 = 0.9651 / 1.3183ms（相差 36%）→ 多轮中位数 0.6962 / 0.8033ms；详见第 10b 节 |
+| `CHANGELOG` 自造 `0.5ms` 预算，把达标写成未达标 | 按提示词第 11 部分原文改为 `< 1ms`；判定 ❌ → ✅ |
+| `CHANGELOG` 引用不存在的 README 章节「性能预算与实测」 | 已在 README 补真实章节（第 11 部分 15 项预算逐项对照），引用不再悬空 |
+| README「功能可用性报告」仍写"Windows 上跳过 UDS 断言" | 已按实测更正；并说明只有 2 条权限位断言按能力探测跳过 |
+| README 首页/设置行仍写"视觉未重做" | 实测 `ui/theme/Theme.kt` 269 行 OKLCH 令牌 + `ui/glass/Glass.kt` 469 行受控玻璃 + 7 个 `screen/*.kt` 全部接入 → 更正为"已接入 4.11 设计系统" |
+| 内联文案数 117 处（`CHANGELOG` / `CONTRIBUTING`）与脚本输出的 372 处不符 | 以脚本为准更正两处；并说明差值来自 `ui/nav/LayoutPreset.kt`（单文件 204 处） |
+| `action.sh` 菜单数：PROGRESS 写 19、README 写 11 | 两者都不算错（门禁数全部菜单行 = 主菜单 11 + 两子菜单 8）；已改成无歧义写法 |
+| README 写"84 个 Go 用例"，与实测不符 | 实测 88（86 PASS + 2 SKIP）；已更正并说明口径 |
+| `GlassPolicyTest` 里含 `%` 的测试名触发 Windows 警告 | 改名后 `ui:compileDebugUnitTestKotlin` 无该警告 |
 
 ---
 
@@ -979,7 +1180,9 @@ $ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-pu
 [REMOTE] PASS
 ```
 
-- 推送结果：`e87e6f0..2e1148e  main -> main`，本地 HEAD 与远程 `refs/heads/main` 一致
+> 该脚本在无 `GITHUB_TOKEN`/`GH_TOKEN` 时 `exit 3 = SKIP`（**不是通过**）。
+> 本次是带 token 运行的结果；CI 上没有 token 时这一步会 SKIP，属预期。
+
 - `.git/config` 未落盘令牌（`grep -c 'github_pat\|extraheader' .git/config` → 0）
 - Release 数 0 → 自更新链路（18.5）尚不可端到端验证，已登记在 `PENDING-EXTERNAL.md`
 

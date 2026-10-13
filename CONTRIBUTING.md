@@ -155,7 +155,8 @@ scope 用模块名：`rule` / `domain` / `data` / `engine` / `ui` / `app` / `mod
 - ❌ 让应用在运行时下载可执行内容（R2）
 - ❌ 用 WebView 实现主界面（R1）
 - ❌ 提交 `local.properties`、`*.jks`、`*.keystore`
-- ❌ 自动把仓库从私有改成公开
+- ❌ 在没有所有者明确指示的情况下改仓库可见性（本仓库当前按所有者决定为公开分发；
+  若改成 private，CI 的 `remote-guard` 会失败）
 
 ---
 

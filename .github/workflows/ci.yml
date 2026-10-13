@@ -291,11 +291,16 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
-  # 远端状态核验：确认仓库仍是私有、许可证仍是 GPL 族。
-  # 只在 main 上跑，且需要 token。仓库公开后这一步会**失败**——
-  # 那是有意的：提示维护者"你自己改了可见性"。
+  # 远端状态核验：确认仓库是**公开**、许可证仍是 GPL 族。
+  # 只在 main 上跑，且需要 token。
+  #
+  # 背景：提示词 2.6 / 18.6 规定"建仓一律先 private、不得自行改 public"，
+  # 所以本护栏最初写成"公开即失败"。仓库所有者已于 2026-10-13 明确决定转为
+  # 公开分发（updateJson / raw 地址必须可匿名访问），因此期望值随之翻转为
+  # --expect-public true。护栏没有取消，只是跟随已登记的决定改了方向：
+  # 此后**若有人把仓库改回 private，这一步会失败**，同样起到提示维护者的作用。
   remote-guard:
-    name: 远端状态护栏（私有性 + 许可证）
+    name: 远端状态护栏（公开性 + 许可证）
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     permissions:
@@ -309,4 +314,4 @@ jobs:
         run: |
           python3 tools/verify_remote.py \
             --repo "${{ github.repository }}" \
-            --expect-public false
+            --expect-public true

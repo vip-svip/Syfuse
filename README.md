@@ -1138,9 +1138,14 @@ A：菜单结构按 3.5 固定，但每项都真的接了功能或明确报错�
 
 无需要用户粘贴执行的命令。账号与令牌可用，建仓 / 推送 / 核验均已完成。
 
-> 仓库当前为 **private**：`module.prop` 的 `updateJson` 与 `update.json` 的两个 URL
-> 在此期间不可匿名访问。这是**有意登记的已知前提**（提示词 2.6 / 18.6 规定仓库一律先建 private），
-> 不是疏漏；改为 public 后无需改动任何文件即生效。改可见性是不可逆动作，需仓库所有者手动执行。
+> 仓库已于 **2026-10-13 由所有者指示转为 public**（原先按提示词 2.6 / 18.6 先建 private）。
+> 转为公开后 `module.prop` 的 `updateJson` 与 `update.json` 中的 raw 地址即可匿名访问，
+> 无需改动文件内容即生效。相应地，`tools/verify_remote.py` 的默认期望值与 CI 的
+> `remote-guard` 已同步翻转为 `--expect-public true`：护栏未被取消，而是改为
+> **在仓库被改回 private 时失败**。
+>
+> 注意这与"自更新链路可用"不是一件事：`update.json` 的 `zipUrl` 指向 Release 资产，
+> 而 Release 尚未创建，该 URL 目前仍是 404（见 [`PENDING-EXTERNAL.md`](PENDING-EXTERNAL.md) 第 2 条）。
 
 ---
 

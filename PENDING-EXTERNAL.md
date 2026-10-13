@@ -82,17 +82,20 @@ curl -sSL -o /dev/null -w '%{http_code}\n' \
 
 ---
 
-## 3. 仓库为 private（`updateJson` 与 raw 地址不可匿名访问）
+## 3. 仓库可见性（已于 2026-10-13 由所有者拍板改为 public —— 本条已关闭）
 
-**缺什么**：仓库公开（或改用带令牌的分发通道）。
+**缺什么**：仓库公开（`updateJson` 与 raw 地址必须可匿名访问）。
 
-**为什么现在不改**：提示词 2.6 与 18.6 第 3 条 —— **仓库一律先建 private，
-任何情况都不自行改 public**。这是不可逆动作，不自行放开。
+**为什么不自行放开**：提示词 2.6 与 18.6 第 3 条 —— **仓库一律先建 private，
+任何情况都不自行改 public**，因为改可见性是不可逆动作。
 
-**怎么补**：由仓库所有者在 GitHub 仓库 Settings → General → Danger Zone → Change visibility
-手动改为 public；或保持 private 并在 App 内用令牌访问。
+**本次结论**：该动作已由**仓库所有者本人**明确指示执行（原话："把仓库公开"），
+不属于"AI 自行放开"。2026-10-13 通过 GitHub API `PATCH /repos/vip-svip/Syfuse
+{"private":false}` 完成，返回可见性 `public`。护栏（`tools/verify_remote.py`
+默认值 + CI `remote-guard`）已同步翻转为 `--expect-public true` —— 护栏没有被取消，
+方向反过来了：**此后若有人把仓库改回 private，CI 会失败**。
 
-**补齐后跑**：
+**补齐后跑**（现在可跑，应全为 200）：
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' \
@@ -101,8 +104,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
   https://raw.githubusercontent.com/vip-svip/Syfuse/main/module.prop           # 期望 200
 ```
 
-**期望结果**：两个地址均 200。`module/module.prop` 与 `update.json` 中已就地写明
-"private 期间该地址不可用是有意登记的已知前提，公开后无需改动即生效"。
+**期望结果**：两个地址均 200。`module/module.prop` 与 `update.json` 中的注释已随
+本次变更改写为"公开分发"口径（原先写的是"private 期间该地址不可用是有意登记的已知前提"）。
+
+**剩余未决**：本条只解决"地址可达"。`update.json` 的 `zipUrl` 指向 Release 资产，
+而 **Release 仍不存在，故该 URL 依旧 404** —— 那属于下面第 2 条，与本条无关，仍待办。
 
 ---
 

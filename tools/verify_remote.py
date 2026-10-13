@@ -2,7 +2,9 @@
 """远端仓库状态核验：把"我已经推送/我已经设置成私有/许可证是 GPL"变成可核对的 API 事实。
 
 提示词的三条硬要求靠本脚本落地：
-  - 仓库**默认私有**，且不得自我升级为公开；
+  - 仓库可见性与本仓库的**既定分发方式一致**（本仓库已由所有者决定公开分发，
+    故默认期望公开；`--expect-public` 可显式指定，改可见性时必须同步改期望值，
+    不允许"改了可见性但让护栏静默通过"）；
   - 许可证必须落在 GPL-3.0-or-later 族，**不得**被换成 MIT；
   - 关键文件（module.prop / update.json / LICENSE / README.md 等）确实存在于远端。
 
@@ -10,7 +12,7 @@
 
 用法：
     GITHUB_TOKEN=... python tools/verify_remote.py --repo vip-svip/SY-Fusion
-    python tools/verify_remote.py --repo owner/name --expect-public false
+    python tools/verify_remote.py --repo owner/name --expect-public true
     python tools/verify_remote.py --repo owner/name --json
 """
 from __future__ import annotations
@@ -128,8 +130,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", required=True, help="owner/name")
     ap.add_argument("--branch", default=None, help="默认取仓库 default_branch")
-    ap.add_argument("--expect-public", choices=["true", "false", "any"], default="false",
-                    help="期望的可见性，默认 false（私有）")
+    ap.add_argument("--expect-public", choices=["true", "false", "any"], default="true",
+                    help="期望的可见性，默认 true（本仓库已登记为公开分发）")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -157,9 +159,11 @@ def main() -> int:
     visibility = repo.get("visibility") or ("private" if private else "public")
     findings.append(f"仓库可见性: {visibility}")
     if args.expect_public == "false" and not private:
-        fails.append("仓库是**公开**的，但要求默认私有（不得自我升级为公开）")
+        fails.append("仓库是**公开**的，但期望为私有（若这是有意的，请同步把期望值改成 "
+                     "--expect-public true，并更新 README / PENDING-EXTERNAL 的登记）")
     if args.expect_public == "true" and private:
-        fails.append("仓库是私有的，但期望公开")
+        fails.append("仓库是**私有**的，但期望公开（公开分发的前提是 updateJson / raw "
+                     "地址可匿名访问；改回私有会让自更新链路失效）")
 
     default_branch = repo.get("default_branch", "main")
     branch = args.branch or default_branch

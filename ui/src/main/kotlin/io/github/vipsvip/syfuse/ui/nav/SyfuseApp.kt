@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.outlined.InsertChart
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -27,17 +27,30 @@ import androidx.navigation.compose.rememberNavController
 import io.github.vipsvip.syfuse.data.settings.AppSettingsDataStore
 import io.github.vipsvip.syfuse.domain.settings.SettingsCatalog
 import io.github.vipsvip.syfuse.domain.settings.ThemeMode
+import io.github.vipsvip.syfuse.ui.screen.ConfigScreen
+import io.github.vipsvip.syfuse.ui.screen.DataScreen
 import io.github.vipsvip.syfuse.ui.screen.HomeScreen
-import io.github.vipsvip.syfuse.ui.screen.NodesScreen
-import io.github.vipsvip.syfuse.ui.screen.RulesScreen
 import io.github.vipsvip.syfuse.ui.screen.SettingsScreen
 import io.github.vipsvip.syfuse.ui.theme.SyfuseTheme
 
-/** 底部四个主 Tab，对齐 Shadowrocket 的四段式（5.11）。 */
+/**
+ * 底部四个主 Tab。
+ *
+ * 命名与顺序严格对齐 Shadowrocket 的四段式（提示词 4.1 / 7.2）：
+ * **首页 | 配置 | 数据 | 设置**。
+ *
+ * 为什么之前叫「节点 / 规则」是错的：那是把**内容**当成了**分区**。
+ * 节点在 Shadowrocket 里属于「数据 → 服务器节点」，规则属于「配置 → 规则」。
+ * 用内容名做 Tab 会让用户找不到原本熟悉的入口 —— 4.1 明确要求
+ * 「命名与默认值尽量沿用，用户熟悉」。
+ *
+ * 提示词 7.2 还要求**不新增第 5 个 Tab**：所有超集增强项必须落在
+ * 这四页的分区里，避免破坏 Shadowrocket 习惯。
+ */
 enum class SyfuseTab(val route: String, val label: String, val icon: ImageVector) {
     HOME("home", "首页", Icons.Filled.Home),
-    NODES("nodes", "节点", Icons.Filled.SwapVert),
-    RULES("rules", "规则", Icons.Filled.Shield),
+    CONFIG("config", "配置", Icons.Filled.Tune),
+    DATA("data", "数据", Icons.Outlined.InsertChart),
     SETTINGS("settings", "设置", Icons.Filled.Settings),
 }
 
@@ -98,8 +111,8 @@ fun SyfuseApp(
                 modifier = Modifier.padding(innerPadding),
             ) {
                 composable(SyfuseTab.HOME.route) { HomeScreen() }
-                composable(SyfuseTab.NODES.route) { NodesScreen() }
-                composable(SyfuseTab.RULES.route) { RulesScreen() }
+                composable(SyfuseTab.CONFIG.route) { ConfigScreen() }
+                composable(SyfuseTab.DATA.route) { DataScreen() }
                 composable(SyfuseTab.SETTINGS.route) { SettingsScreen() }
             }
         }

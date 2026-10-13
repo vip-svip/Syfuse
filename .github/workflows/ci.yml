@@ -57,6 +57,23 @@ jobs:
       - name: 交付门禁（README）
         run: bash tools/verify_deliverable.sh README.md 300
 
+      # 12 部分要求的其余验证脚本。需要设备的会自行 exit 3（SKIP）——
+      # 在 CI 上这是**预期**结果，不是失败；但不允许它们返回 0 冒充通过。
+      - name: UI 功能对齐
+        run: bash tests/ui_parity_check.sh
+
+      - name: 玻璃性能（静态部分）
+        run: bash tests/ui_glass_perf.sh || [ $? -eq 3 ]
+
+      - name: 功能可用性门禁（静态部分）
+        run: bash tests/run_feature_matrix.sh || [ $? -eq 3 ]
+
+      - name: 防泄漏检测（静态部分）
+        run: bash tests/run_leak_check.sh || [ $? -eq 3 ]
+
+      - name: Hook 检查（静态部分）
+        run: bash tests/run_hook_check.sh || [ $? -eq 3 ]
+
       - name: 上传静态检查输出
         if: always()
         uses: actions/upload-artifact@v4

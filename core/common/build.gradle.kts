@@ -27,4 +27,10 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // 打开标准输出：OKLCH 换算与对比度断言会把**实测数值**打出来，
+    // 这些数值本身就是证据（文档给的是近似值，必须能看到真实偏差）。
+    testLogging {
+        events("passed", "failed", "skipped")
+        showStandardStreams = true
+    }
 }

@@ -61,15 +61,14 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 7 轮（2026-10-13）把 11 个并行 agent 被 429 限流打断的
-半成品全部亲自验收/修复/补齐并提交推送（dd74798）：
-  ① M6 DNS 落盘并全绿（修空域名缺陷）；② M9 内核侧 internal/conn 补齐
-（11 用例，connections/traffic 数据源就绪）；③ 语料 47→238 行两侧全绿
-（T6 完成）；④ M9 UI 三页编译过（修 @EntryPoint/@InstallIn）；
-⑤ 模块 APK 自动安装过门禁；⑥ M8 起步 internal/mitm/ca.go 落盘（待测试）。
-下一轮第一个动作：**M9 UDS 接线** —— connections/traffic 两个方法接
-conn.Tracker（main.go 待实现表 → 真实现，Kotlin PENDING 表同步，契约测试红绿判据），
-之后补 mitm/ca.go 测试（issue/hosts/mobileconfig/pin + 18 条用例）。
+NEXT_ACTION: 第 8 轮（2026-10-13）M9 UDS 接线 + M12 防泄漏内核双双落地：
+  ① 135c89a：dataplane.tracked() 打通 Open/Close 记账，connections/traffic
+两个 UDS 方法接真实 Tracker，端到端测试（真隧道+最小 SOCKS5 客户端）；
+② 2f45696：internal/leak 七维度防泄漏检测（Probe 可插拔 + STUN 解析器
+黄金值测试 12 条）+ leak.check UDS 方法，leak.report 移出 pending。
+两笔均已推送（dd74798..2f45696）。kernel-checks 用例=254 失败=0。
+下一轮第一个动作：**M7a 模块系统 Go 侧**（src/internal/module/，从零做），
+之后 M8 mitm/ca_test.go（issue/hosts/mobileconfig/pin + 18 条用例）。
 注意：子代理 429 限流至 2026-10-14 16:24 UTC+8，期间大单元由主代理自做。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）  
 ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2  

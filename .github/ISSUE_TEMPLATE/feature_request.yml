@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        提之前先看一眼 [README 的 Shadowrocket 功能覆盖表](https://github.com/vipsvip/Syfuse/blob/main/README.md#shadowrocket-功能覆盖表)：
+        提之前先看一眼 [README 的 Shadowrocket 功能覆盖表](https://github.com/vip-svip/Syfuse/blob/main/README.md#shadowrocket-功能覆盖表)：
         表里标了「复刻 / 增强 / 不做」三态。标为「不做」的项请在建议里说明
         **为什么你认为当初的判断不成立**，而不是直接重提。
 

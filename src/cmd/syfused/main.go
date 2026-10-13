@@ -25,10 +25,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vipsvip/syfuse/src/internal/ipc"
-	"github.com/vipsvip/syfuse/src/internal/logx"
-	"github.com/vipsvip/syfuse/src/internal/manifest"
-	"github.com/vipsvip/syfuse/src/syfuse"
+	"github.com/vip-svip/syfuse/src/internal/ipc"
+	"github.com/vip-svip/syfuse/src/internal/logx"
+	"github.com/vip-svip/syfuse/src/internal/manifest"
+	"github.com/vip-svip/syfuse/src/syfuse"
 )
 
 // moduleID 必须与 module/module.prop 的 id 一致。

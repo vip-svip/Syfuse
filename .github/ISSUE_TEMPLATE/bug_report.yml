@@ -6,11 +6,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        请先确认这不是[已知缺口](https://github.com/vipsvip/Syfuse/blob/main/README.md#当前完成度)：
+        请先确认这不是[已知缺口](https://github.com/vip-svip/Syfuse/blob/main/README.md#当前完成度)：
         内核数据面、VpnService、订阅解析、广告过滤的数据面生效、LSPosed Hook **都还没实现**，
         这些不构成缺陷。
 
-        安全相关的问题**不要**在这里提，请走 [SECURITY.md](https://github.com/vipsvip/Syfuse/blob/main/SECURITY.md)。
+        安全相关的问题**不要**在这里提，请走 [SECURITY.md](https://github.com/vip-svip/Syfuse/blob/main/SECURITY.md)。
 
   - type: dropdown
     id: area

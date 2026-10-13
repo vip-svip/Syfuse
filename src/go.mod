@@ -1,4 +1,4 @@
-module github.com/vipsvip/syfuse/src
+module github.com/vip-svip/syfuse/src
 
 go 1.23
 

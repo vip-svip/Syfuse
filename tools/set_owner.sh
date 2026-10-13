@@ -102,18 +102,42 @@ main() {
     echo "包名段与当前一致（$OLD_SEG），仅同步署名，不移动目录。"
   fi
 
-  # ---------- 1. 文本内容替换 ----------
-  # 只替换我们自己的命名空间，避免误伤第三方包名（例如 com.github.topjohnwu.libsu）。
-  echo "-- 改写包名引用 --"
+  # ---------- 1. 文本内容替换（包名段 + 仓库 URL + Go module path） ----------
+  # 三类改写合并成一次遍历。为什么合并：MSYS/Git-Bash 上每 spawn 一次 grep/sed 约 150ms，
+  # 183 个文件逐个 spawn 会把脚本拖到 2 分钟以上（实测直接超时）。
+  # 先用 `git grep -l`（C 实现）筛出候选，再只对命中文件 spawn sed。
+  #
+  # URL 那条是补的缺口：原脚本只改 `io.github.<seg>.syfuse` 包名引用，
+  # **不覆盖 URL 主机**。实测 `.github/ISSUE_TEMPLATE/*.yml` 与 `update.json` 里的
+  # `github.com/vip-svip/Syfuse` 长期 404（`vipsvip` 是包名段，不是 GitHub 账号）。
+  # 该正则只匹配本项目仓库名 `Syfuse`，不会误伤第三方 URL。
+  echo "-- 改写包名 / 仓库 URL / Go module path --"
+
+  pkg_pat="io\\.github\\.$OLD_SEG\\.syfuse|io/github/$OLD_SEG/syfuse"
+  url_pat='(github\.com|raw\.githubusercontent\.com)/[^/[:space:]]+/Syfuse'
+  gomod_pat='github\.com/[^/]+/syfuse/src'
+
+  mapfile -t targets < <(
+    { git grep -lE "$pkg_pat|$url_pat|$gomod_pat" -- . 2>/dev/null || true; } | sort -u
+  )
+  [ -f src/go.mod ] && targets+=("src/go.mod")
+
   changed=0
-  while IFS= read -r f; do
-    if grep -q "io\.github\.$OLD_SEG\.syfuse\|io/github/$OLD_SEG/syfuse" "$f" 2>/dev/null; then
-      sed -i.bak "s#io\.github\.$OLD_SEG\.syfuse#io.github.$seg.syfuse#g; s#io/github/$OLD_SEG/syfuse#io/github/$seg/syfuse#g" "$f"
-      rm -f "$f.bak"
-      changed=$((changed+1))
-    fi
-  done < <(git ls-files 2>/dev/null || find . -type f -not -path './.git/*' -not -path '*/build/*')
+  for f in "${targets[@]:-}"; do
+    [ -f "$f" ] || continue
+    # 用 `sed -i`（不带后缀）就地改写，**不要** `-i.bak` + `rm`：
+    # 每个文件多一次 rm 在沙箱/受限环境里代价很高（实测把脚本拖到超时）。
+    # 改动文件数改为事后用 `git diff --name-only` 统计。
+    sed -i -E \
+      -e "s#io\.github\.$OLD_SEG\.syfuse#io.github.$seg.syfuse#g" \
+      -e "s#io/github/$OLD_SEG/syfuse#io/github/$seg/syfuse#g" \
+      -e "s#((github\.com|raw\.githubusercontent\.com)/)[^/[:space:]]+(/Syfuse)#\1$owner\3#g" \
+      -e "s#github\.com/[^/]+/syfuse/src#github.com/vip-svip/syfuse/src#g" \
+      "$f" 2>/dev/null
+  done
+  changed="$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')"
   echo "   改写文件数: $changed"
+  [ -f src/go.mod ] && echo "   src/go.mod -> $(head -1 src/go.mod)"
 
   # ---------- 2. 目录搬迁 ----------
   if [ "$seg" != "$OLD_SEG" ]; then

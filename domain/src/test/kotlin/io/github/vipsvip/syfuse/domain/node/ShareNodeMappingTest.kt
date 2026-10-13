@@ -36,8 +36,7 @@ class ShareNodeMappingTest {
         val node = ShareLink.parse("trojan://secretpw@t.example.invalid:443").toProxyNode("id1")
 
         // ProxyNode 里没有任何"明文口令"字段；这里断言所有字符串字段都不含它。
-        // rawJson 是刻意的例外（导入来源留痕，见 ShareNodeMapping 的说明），因此排除。
-        val structural = listOf(node.id, node.name, node.server)
+        val structural = listOf(node.id, node.name, node.server, node.rawJson)
         for (f in structural) {
             assertThat(f).doesNotContain("secretpw")
         }
@@ -159,11 +158,34 @@ class ShareNodeMappingTest {
     }
 
     @Test
-    fun `rawJson 保留原始 URI 供排障与导出`() {
-        val uri = "trojan://pw@t.example.invalid:443#%E8%8A%82%E7%82%B9"
+    fun `rawJson 必须为空 —— 原始链接含明文凭据`() {
+        // **这是本文件最重要的一条断言。**
+        // ProxyNode.rawJson 会直接落进 Room 的普通文本列，而原始分享链接里含明文口令。
+        // 一旦把它写进去，CredentialVault 与 R5（凭据不落明文）就整条作废。
+        // 我在初版实现里正是这么写的（"留痕方便排障"），被 SubscriptionTest 的
+        // 既有断言拦下 —— 那条断言是对的，我改了实现而不是改它。
+        val uri = "trojan://SUPER_SECRET_PW@t.example.invalid:443#%E8%8A%82%E7%82%B9"
         val node = ShareLink.parse(uri).toProxyNode("id1")
 
-        assertThat(node.rawJson).isEqualTo(uri)
+        assertThat(node.rawJson).isEmpty()
+        assertThat(node.rawJson).doesNotContain("SUPER_SECRET_PW")
+    }
+
+    @Test
+    fun `任何字符串字段都不得包含明文凭据`() {
+        // 全字段扫描而不是只查 credentialRef：
+        // 缺陷往往出现在"没人想到要检查"的字段上（我就是栽在 rawJson）。
+        val uri = "vless://$UUID@v.example.invalid:443?security=tls#n"
+        val node = ShareLink.parse(uri).toProxyNode("id1")
+
+        val fields = listOf(
+            node.id, node.name, node.server, node.credentialRef.orEmpty(), node.rawJson,
+            node.transport?.host.orEmpty(), node.transport?.path.orEmpty(),
+            node.tls?.sni.orEmpty(),
+        )
+        for (f in fields) {
+            assertThat(f).doesNotContain(UUID)
+        }
     }
 
     @Test

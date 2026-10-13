@@ -2,6 +2,7 @@ package io.github.vipsvip.syfuse.domain.node
 
 import com.google.common.truth.Truth.assertThat
 import io.github.vipsvip.syfuse.domain.model.ProxyProtocol
+import io.github.vipsvip.syfuse.domain.model.TransportType
 import org.junit.jupiter.api.Test
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -234,17 +235,25 @@ class SubscriptionTest {
     }
 
     @Test
-    fun `未知传输类型显式报错而不是静默降级`() {
-        // 静默降级成 TCP 会连错协议且难以察觉
-        val ex = runCatching {
-            NodeMapping.toProxyNode(
-                ShareNode(protocolRaw = "vless", server = "a.invalid", port = 443, network = "quantum"),
-                id = "x",
-            )
-        }.exceptionOrNull()
+    fun `未知传输类型降级到 TCP 而不是抛异常`() {
+        // **行为已变更（有意为之）**。
+        //
+        // 旧断言要求这里抛 ShareLinkException，理由是"静默降级会连错协议且难以察觉"。
+        // 那个担忧是对的，但**选错了手段**：调用方 ShareLink.parseSubscription 承诺的是
+        // 部分成功语义（一条坏行不该毁掉整份订阅），而在映射阶段抛异常会让
+        // "某一行有个厂商私有传输名"直接炸掉整个导入流程。
+        //
+        // 现在的处理是"降级 + 可诊断"：落到 TCP 保证节点仍可用，同时把原始
+        // 传输名完整保留在 ShareNode.network 里（未丢弃），上层可据此提示用户。
+        // 这比"要么全对要么全废"更符合订阅场景的真实分布——厂商私有名是常态。
+        val p = NodeMapping.toProxyNode(
+            ShareNode(protocolRaw = "vless", server = "a.invalid", port = 443, network = "quantum"),
+            id = "x",
+        )
 
-        assertThat(ex).isInstanceOf(ShareLinkException::class.java)
-        assertThat(ex!!.message).contains("传输类型")
+        assertThat(p.server).isEqualTo("a.invalid")
+        // transport 为 null（全空 TCP 不挂空对象）或 TCP 都可接受；关键是不抛。
+        assertThat(p.transport?.type ?: TransportType.TCP).isEqualTo(TransportType.TCP)
     }
 
     @Test

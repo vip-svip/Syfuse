@@ -47,12 +47,17 @@ fun ShareNode.toProxyNode(
     latencyMs = latencyMs,
     favorite = false,
     sortIndex = sortIndex,
-    // rawJson 存**原始 URI**（含凭据）。
-    // 这是刻意的：库里的 rawJson 是"导入来源的逐字留痕"，用于导出时还原与排障；
-    // R5 要求的"不落明文"针对的是**结构化的凭据字段**，而 rawJson 的访问路径
-    // 受数据库层保护（见 data 模块的加密与访问说明）。
-    // 若把 rawJson 也抹掉，导入导出就不再是 round-trip，排障也无从下手。
-    rawJson = raw,
+    // rawJson **必须为空**。
+    //
+    // 我最初的实现把它设成原始 URI（理由是"导入来源留痕、方便排障"），这是**错的**，
+    // 且错得危险：ProxyNode.rawJson 会经 ProxyNodeEntity.rawJson 直接落进 Room 的
+    // 普通文本列——而原始分享链接里**含明文口令/UUID**。那等于绕开 CredentialVault，
+    // 把 R5（凭据不落明文）整条作废。
+    //
+    // 排障需求由别处满足：需要原始链接时，从 credentialRef 指向的加密容器旁路取，
+    // 或在导入时把"哪一行有问题"记进 SubscriptionLineError（那里没有凭据）。
+    // 结论：宁可放弃 rawJson 的留痕便利，也不能让明文凭据进库。
+    rawJson = "",
 )
 
 /**

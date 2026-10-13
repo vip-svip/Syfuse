@@ -4,9 +4,6 @@ import io.github.vipsvip.syfuse.domain.model.ProfileType
 import io.github.vipsvip.syfuse.domain.model.ProxyNode
 import io.github.vipsvip.syfuse.domain.model.ProxyProtocol
 import io.github.vipsvip.syfuse.domain.model.SubscriptionInfo
-import io.github.vipsvip.syfuse.domain.model.TransportOptions
-import io.github.vipsvip.syfuse.domain.model.TransportType
-import io.github.vipsvip.syfuse.domain.model.TlsOptions
 
 /**
  * [ShareNode]（分享链接解析出来的一次性事实）与 [ProxyNode]（可持久化的领域模型）
@@ -53,18 +50,14 @@ object NodeMapping {
         } else {
             null
         }
-        return ProxyNode(
+        // 字段装配全部委托给 ShareNodeMapping —— 那里是唯一的实现点。
+        // 早期这里有一份"自己的"装配逻辑，与 ShareNodeMapping 形成了两个真相来源，
+        // 且比它少了三类字段（见下方 toProxyNode 的注释）。合并成一条路径后，
+        // "导入的节点长什么样"只有一个地方需要维护。
+        return node.toProxyNode(
             id = id,
-            name = node.name.ifEmpty { node.displayLabel },
-            protocol = node.protocol ?: protocolOf(node.protocolRaw),
-            server = node.server,
-            port = node.port,
-            credentialRef = ref,
-            tls = tlsOf(node),
-            transport = transportOf(node),
-            plugin = null,
             sortIndex = sortIndex,
-            rawJson = "", // 原始链接含凭据，**不落库**；需要时从 credentialRef 旁路取
+            credentialRef = ref,
         )
     }
 
@@ -79,34 +72,6 @@ object NodeMapping {
         "http", "https" -> ProxyProtocol.HTTP
         "socks", "socks5" -> ProxyProtocol.SOCKS5
         else -> throw ShareLinkException("未知协议无法映射到领域模型: $raw")
-    }
-
-    private fun tlsOf(n: ShareNode): TlsOptions? {
-        if (!n.tls && n.sni.isEmpty() && !n.insecure) return null
-        return TlsOptions(
-            sni = n.sni.ifEmpty { null },
-            skipCertVerify = n.insecure,
-            allowInsecure = n.insecure,
-        )
-    }
-
-    private fun transportOf(n: ShareNode): TransportOptions? {
-        if (n.network.isEmpty() && n.host.isEmpty() && n.path.isEmpty()) return null
-        return TransportOptions(
-            type = when (n.network.lowercase()) {
-                "ws" -> TransportType.WS
-                "grpc" -> TransportType.GRPC
-                "h2", "http2" -> TransportType.HTTP2
-                "quic" -> TransportType.QUIC
-                "mkcp" -> TransportType.MKCP
-                "" , "tcp" -> TransportType.TCP
-                // 未知传输类型不要静默降级成 TCP —— 那会连错协议且难以察觉。
-                // 保留原样放在 host 里没有意义，所以显式报错，由上层记录"该节点传输层无法识别"。
-                else -> throw ShareLinkException("未知传输类型无法映射: ${n.network}")
-            },
-            host = n.host.ifEmpty { null },
-            path = n.path.ifEmpty { null },
-        )
     }
 
     /**

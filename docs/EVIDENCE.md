@@ -3,10 +3,10 @@
 > 提示词 2.9 / 2.10 第 6 条：**证据必须落盘**，不能只活在聊天里。
 > 本文件的每一段都是命令的**原始输出**（未改写、未摘要），可直接复现。
 >
-> - 采集时间：2026-10-13T02:21:31Z
+> - 采集时间：2026-10-13T02:26:39Z
 > - 采集环境：Windows 10 / JDK 21.0.12.1+1 / Go 1.23.4 / Gradle 8.11.1 / Android SDK platform-35 + build-tools 35.0.0
-> - 采集时 HEAD：``
-> - 跟踪文件数：183
+> - 采集时 HEAD：``（即本文件所在提交）
+> - 跟踪文件数：187
 > - `adb devices`：**空**（无真机 → 所有设备类检查 `exit 3 = SKIP`，SKIP 不是通过）
 
 ---
@@ -16,7 +16,7 @@
 | 检查 | 退出码 | 结论 |
 |---|---|---|
 | 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 5 项） |
-| 交付门禁（README.md） | **0** | 全部通过（WARN 2 项） |
+| 交付门禁（README.md） | **0** | 全部通过（WARN 2 项），需求项 36 条缺失 0 条 |
 | `tools/scan_secrets.py` | **0** | PASS — 无禁止项 |
 | `tests/run_unit.sh`（JVM 单测） | **0** | 5 套件 / 54 用例 / 失败 0 |
 | `cd src && go test ./...` | **0** | 3 包全绿 |
@@ -38,16 +38,16 @@
 ## 1. 交付门禁（提示词文件本身）
 
 ```text
-﻿
+
 == 目标文件 ==
-  F:\Ai\Syfuse-完美提示词.md
+  F:/Ai/Syfuse-完美提示词.md
   字节 146185   行数 2098
 
 == 1. 体积与行数（确认没被截断） ==
   [PASS] 字节数 146185
   [PASS] 行数 2098 >= 下限 1000
-  [PASS] 首行非空：# Syfuse 完美提示词（单文件 · 自包含 · 全自主 · 模块优先 · Shadowro
-  [PASS] 末行非空：> **法律与道德提示**：网络代理、HTTPS 解密、应用 Hook 与系统级网络拦截属于双刃
+  [PASS] 首行非空：# Syfuse 完美提示词（单文件 · 自包
+  [PASS] 末行非空：> **法律与道德提示**：网络代理、HTT
 
 == 2. 结构完整性 ==
   [PASS] ## 章节 34 个
@@ -56,10 +56,10 @@
   [PASS] 无重复小节标题
 
 == 3. 占位符与未完成标记 ==
-  [WARN] L195 命中位于行内代码/规则说明，忽略：12. ? 残留占位符：`<your-name>`、`TODO`、`FIXME`（测试数据里的示例域名除外）
+  [WARN] L195 命中位于行内代码/规则说明，忽略：12. ❌ 残留占位符：`<your-name>`、`TODO`、`FIXME`
   [WARN] L1208 命中位于行内代码/规则说明，忽略：| `tools/verify_deliverable.ps1` + `tools/verify_deliverable
-  [WARN] L1291 命中位于行内代码/规则说明，忽略：9. ? 提交无法编译、无法自测、用"TODO 后续补"占位的代码
-  [WARN] L1296 命中位于行内代码/规则说明，忽略：14. ? 假装已推送/已发布；? 令牌落盘；? 硬编码具体 GitHub 账号名；? 残留 `<your-name>`
+  [WARN] L1291 命中位于行内代码/规则说明，忽略：9. ❌ 提交无法编译、无法自测、用"TODO 后续
+  [WARN] L1296 命中位于行内代码/规则说明，忽略：14. ❌ 假装已推送/已发布；❌ 令牌落盘；❌ 
   [WARN] 代码块内含占位符类字样 3 处（示例/源码，已跳过不计失败）
 
 == 4. 密钥与令牌残留扫描 ==
@@ -105,39 +105,36 @@
   需求项 36 条，缺失 0 条
 
 == 6. 脚本编码规范 ==
-  [PASS] run_agent.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
-  [PASS] verify_deliverable.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
-  [PASS] verify_deliverable.sh 无 BOM（shebang 正确）
-  [PASS] verify_deliverable.sh 换行为 LF（正确）
+  [WARN] 未找到 .ps1/.sh 可检查（跳过）
 
 == 汇总 ==
-  全部通过（WARN 5 项）
+  全部通过（WARN 6 项）
 ```
 
 ---
 
-## 2. 交付门禁（README.md）
+## 2. 交付门禁（README.md —— 门禁的正确目标）
 
 ```text
 
 == 目标文件 ==
   README.md
-  字节 65327   行数 1001
+  字节 68411   行数 1035
 
 == 1. 体积与行数（确认没被截断） ==
-  [PASS] 字节数 65327
-  [PASS] 行数 1001 >= 下限 300
+  [PASS] 字节数 68411
+  [PASS] 行数 1035 >= 下限 300
   [PASS] 首行非空：# Syfuse · 融合代理
   [PASS] 末行非空：改账号请运行 `tools/set_owner.sh --apply`
 
 == 2. 结构完整性 ==
-  [PASS] ## 章节 30 个
+  [PASS] ## 章节 31 个
   [PASS] ### 小节 27 个
   [PASS] 代码围栏 16 个（成对）
   [PASS] 无重复小节标题
 
 == 3. 占位符与未完成标记 ==
-  [WARN] L931 命中位于行内代码/规则说明，忽略：3. **占位符与未完成标记** —— `TODO` / `FIXME` /
+  [WARN] L935 命中位于行内代码/规则说明，忽略：3. **占位符与未完成标记** —— `TODO` / `FIXME` /
 
 == 4. 密钥与令牌残留扫描 ==
   [PASS] 未发现明文密钥 / 令牌
@@ -193,9 +190,9 @@
 ## 3. 密钥与令牌扫描
 
 ```text
-扫描文件数: 173（git 跟踪）
+扫描文件数: 177（git 跟踪）
 
--- WARN (13) --
+-- WARN (24) --
   README.md:694: [疑似内网/私有地址] 127.0.0.1
   README.md:710: [疑似内网/私有地址] 10.0.0.0
   core/rule/src/main/kotlin/io/github/vipsvip/syfuse/core/rule/RuleParser.kt:28: [疑似内网/私有地址] 127.0.0.1
@@ -203,6 +200,17 @@
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:54: [疑似内网/私有地址] 10.10.0.0
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:56: [疑似内网/私有地址] 10.10.5.5
   core/rule/src/test/kotlin/io/github/vipsvip/syfuse/core/rule/RuleEngineTest.kt:57: [疑似内网/私有地址] 10.20.5.5
+  docs/EVIDENCE.md:199: [疑似内网/私有地址] 127.0.0.1
+  docs/EVIDENCE.md:200: [疑似内网/私有地址] 10.0.0.0
+  docs/EVIDENCE.md:201: [疑似内网/私有地址] 127.0.0.1
+  docs/EVIDENCE.md:202: [疑似内网/私有地址] 10.0.0.0
+  docs/EVIDENCE.md:203: [疑似内网/私有地址] 10.10.0.0
+  docs/EVIDENCE.md:204: [疑似内网/私有地址] 10.10.5.5
+  docs/EVIDENCE.md:205: [疑似内网/私有地址] 10.20.5.5
+  docs/EVIDENCE.md:208: [疑似内网/私有地址] 127.0.0.1
+  docs/EVIDENCE.md:209: [疑似内网/私有地址] 10.10.0.0
+  docs/EVIDENCE.md:210: [疑似内网/私有地址] 127.0.0.1
+  docs/EVIDENCE.md:211: [疑似内网/私有地址] 10.10.5.5
   src/syfuse/node.go:286: [疑似订阅链接（含凭据）] ss://m…port (len=30)
   src/syfuse/node_test.go:472: [疑似订阅链接（含凭据）] ss://S…8388 (len=33)
   tests/corpus/01_syntax_mixed.txt:32: [疑似内网/私有地址] 127.0.0.1
@@ -230,7 +238,7 @@
   src/syfuse/node_test.go:471: [豁免]
   src/syfuse/node_test.go:513: [豁免]
   src/syfuse/node_test.go:514: [豁免]
-[SECRETS] PASS — 无禁止项（WARN 13 条，豁免 19 条）
+[SECRETS] PASS — 无禁止项（WARN 24 条，豁免 19 条）
 ```
 
 ---
@@ -957,7 +965,27 @@ ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`s
 
 ---
 
-## 12. 功能可用性报告
+## 12. 推送后远程核验
+
+```text
+$ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-public false
+== 远端核验 vip-svip/Syfuse@main ==
+  - 仓库可见性: private
+  - 默认分支: main
+  - 许可证: GPL-3.0 (GNU General Public License v3.0)
+  - 关键文件: 23/23 存在
+  - Release 数: 0
+
+[REMOTE] PASS
+```
+
+- 推送结果：`e87e6f0..2e1148e  main -> main`，本地 HEAD 与远程 `refs/heads/main` 一致
+- `.git/config` 未落盘令牌（`grep -c 'github_pat\|extraheader' .git/config` → 0）
+- Release 数 0 → 自更新链路（18.5）尚不可端到端验证，已登记在 `PENDING-EXTERNAL.md`
+
+---
+
+## 13. 功能可用性报告
 
 逐功能的「状态 / 证据 / 计划」以 [README 的「功能可用性报告」](../README.md#功能可用性报告) 为准
 （该表是唯一权威版本，避免两处维护漂移）。本文件只负责**原始输出**。

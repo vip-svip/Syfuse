@@ -7,10 +7,12 @@
 
 [![CI](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-M1%20模块骨架-orange.svg)](#功能可用性报告)
+[![Status](https://img.shields.io/badge/status-M2%20%E7%95%8C%E9%9D%A2%E4%B8%8E%E8%AE%BE%E8%AE%A1%E7%B3%BB%E7%BB%9F-orange.svg)](#功能可用性报告)
 
-> ⚠️ **当前状态：M1（模块骨架）。代理内核未接入，代理上网不可用。**
+> ⚠️ **当前状态：M2（App 骨架与视觉）进行中。代理内核未接入，代理上网不可用。**
 > 逐项状态见[功能可用性报告](#功能可用性报告)。本文档不夸大任何能力。
+> 跨轮进度真相见 [`PROGRESS.md`](PROGRESS.md)；待外部验证项见 [`PENDING-EXTERNAL.md`](PENDING-EXTERNAL.md)；
+> 门禁原始输出与性能数据见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
 
 ---
 
@@ -32,6 +34,7 @@
 - [常见问题](#常见问题)
 - [免责声明](#免责声明)
 - [致谢与许可](#致谢与许可)
+- [进度与外部依赖](#进度与外部依赖)
 
 ---
 
@@ -69,7 +72,7 @@
 - `实验性` = 能构建能运行但未端到端验证；UI 上必须显著标记
 - `不可用` = 未实现；入口禁用并写明原因与计划里程碑
 
-**当前里程碑：M1（模块骨架）。没有任何功能达到 `可用`** —— 因为真机验证未执行（本机无 Android 设备）。
+**当前里程碑：M2（App 骨架与视觉）进行中。没有任何功能达到 `可用`** —— 因为真机验证未执行（本机无 Android 设备）。
 
 | 功能 | 状态 | 证据 / 原因 | 计划 |
 |---|---|---|---|
@@ -77,11 +80,12 @@
 | 模块卸载与完全还原 | 实验性 | 同上；沙箱内安装→卸载→diff 无残留 | 真机验证 |
 | 还原清单机制 | **可用** | 84 个 Go 用例 + 沙箱端到端；`manifest.Add()` 拒绝不可还原条目 | — |
 | `action.sh` 11 项菜单 | 实验性 | 菜单结构与 11 个处理函数已断言；4 项接真实功能，7 项明确报未实现 | 随各里程碑接通 |
-| `syfused` 守护进程 | 实验性 | 源码可编译、84 用例通过；**二进制未随包** | M3 |
+| `syfused` 守护进程 | 实验性 | 源码可编译、Go 用例全绿；**二进制已随包**（`bin/syfused-{arm64,arm,amd64}`，交叉编译产物在 `dist/syfuse-0.1.0.zip` 内）；未在真机运行 | M3 |
 | UDS 控制通道 | 实验性 | 协议与鉴权有测试；Windows 上跳过 UDS 断言，**未在 Linux/真机验证** | M3 + 跑通 CI |
 | 规则引擎（Kotlin，离线） | 实验性 | 28 用例 + 38 条语料期望全绿；未接入数据面 | M5/M10 |
 | 配置编解码 / 设置目录 | 实验性 | JVM 单测通过 | M2 |
-| Compose 界面 | 实验性 | 可构建可启动；**视觉未按 4.11 重做，Tab 命名仍是旧的** | M2 |
+| 设计系统（OKLCH 令牌 + 受控玻璃） | 实验性 | 7 Tab 布局 B + 布局预设 A/B/C（4.1 六条硬标准有可执行判据）；玻璃三档/降采样 4/层数上限 3/白名单断言/超标自动降档/API<31 伪玻璃**均已实现**；策略层 26 条 JVM 用例通过（`ui/src/test/.../GlassPolicyTest.kt`）。**未验证**：模糊是否真的生效、降采样是否真的降负载、降档是否真的在超标时触发 —— 需真机 | 真机跑 `tests/ui_glass_perf.sh` |
+| Compose 界面（7 个功能页） | 实验性 | 7 页（首页/代理/规则/拦截/调试/监控/设置）可构建可启动；`ui-assets` PASS=8、`ui-parity` PASS=27 PEND=6；**未在真机做运行时与截图回归** | 真机跑 `ui_runtime_check.sh` / `ui_screenshot.sh` |
 | **代理上网** | **不可用** | 内核未接入；`Engine.Start()` 返回 `ErrTunnelNotImplemented` | M3 |
 | 分流 / 规则生效 | **不可用** | 规则引擎未接数据面 | M5 |
 | DNS（DoH/DoT/DoQ、fake-ip） | **不可用** | 未实现 | M6 |
@@ -930,22 +934,27 @@ tests/perf_apk_size.sh
 2. **结构完整性** —— `##` / `###` 数量、代码围栏成对、重复小节标题
 3. **占位符与未完成标记** —— `TODO` / `FIXME` / `<your-name>` / 待补写 / `[略]` / 截断省略号 / `XXX`
 4. **密钥与令牌残留** —— `ghp_` / `github_pat_` / `AKIA` / 私钥块 / Slack token
-5. **需求逐条覆盖** —— 30 条需求关键词必须全部命中
+5. **需求逐条覆盖** —— **36 条**需求关键词必须全部命中。这一组只对**交付文档**（即本 README）有意义：
+   它是全项目唯一的文档入口（18.7），36 条需求必须在这里都能被检索到。
+   把它指向 `CHANGELOG.md` 之类的文件会大量 FAIL —— 那是**预期行为**，不是缺陷
 6. **脚本自身编码** —— `.ps1` 必须带 UTF-8 BOM（否则 PS 5.1 按 ANSI 解码中文会报语法错误）；`.sh` 必须**无** BOM（否则破坏 shebang）
 
 ```bash
-# 本仓库 README
+# 本仓库的交付文档（这是门禁的**正确用法**；退出码必须为 0）
 bash tools/verify_deliverable.sh README.md 300
 # 提示词文件本身
-bash tools/verify_deliverable.sh "C:/Users/admin/Desktop/Syfuse-完美提示词.md" 1000
+bash tools/verify_deliverable.sh "F:/Ai/Syfuse-完美提示词.md" 1000
 ```
+
+> 当前状态：`README.md` → **全部通过（WARN 2 项）**，退出码 0。原始输出见
+> [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 第 2 节。
 
 ---
 
 ## 常见问题
 
 **Q：为什么还没有代理功能？**
-A：当前是 M1（模块骨架）。代理内核在 M3 接入。本文档不会把"计划做"写成"已做"。
+A：当前是 M2（App 骨架与视觉）进行中，代理内核在 M3 接入。本文档不会把"计划做"写成"已做"。
 
 **Q：为什么 `syfused` 子命令有的报"未实现"还返回 78？**
 A：退出码 78 专门表示"该功能尚未实现"，让脚本能把它与真实错误（1）区分开。
@@ -991,7 +1000,32 @@ A：菜单结构按 3.5 固定，但每项都真的接了功能或明确报错�
 
 ## 待执行的一步
 
-无。账号与令牌可用，建仓 / 推送 / 核验均已完成。
+无需要用户粘贴执行的命令。账号与令牌可用，建仓 / 推送 / 核验均已完成。
+
+> 仓库当前为 **private**：`module.prop` 的 `updateJson` 与 `update.json` 的两个 URL
+> 在此期间不可匿名访问。这是**有意登记的已知前提**（提示词 2.6 / 18.6 规定仓库一律先建 private），
+> 不是疏漏；改为 public 后无需改动任何文件即生效。改可见性是不可逆动作，需仓库所有者手动执行。
+
+---
+
+## 进度与外部依赖
+
+跨轮续跑的唯一进度真相在 [`PROGRESS.md`](PROGRESS.md)（格式见提示词 2.10）：
+里程碑状态表 + `NEXT_ACTION` + `BLOCKERS`。新会话只读它就能接着干。
+
+需要真实设备或 GitHub Release 才能完成的检查集中在 [`PENDING-EXTERNAL.md`](PENDING-EXTERNAL.md)，
+逐项写明「缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果」。
+
+门禁原始输出、功能可用性报告与性能数据落在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
+
+**当前外部依赖（不影响其余里程碑推进）**：
+
+| 依赖 | 影响 | 状态 |
+|---|---|---|
+| Android 真机（已 root） | 13 个功能的最低可用路径、玻璃帧耗时、隧道吞吐 | 缺（`adb devices` 为空） |
+| GitHub Release | 自更新链路（18.5）端到端验证 | 缺（产物已可产出，未发布） |
+| 仓库 public | `updateJson` 与 raw 地址可匿名访问 | 缺（按规则不自行放开） |
+| Zygisk / LSPosed 框架 | Hook 命中验证 | 缺（降级路径已实现，同样待真机） |
 
 ---
 

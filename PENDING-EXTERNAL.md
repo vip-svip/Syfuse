@@ -1,0 +1,134 @@
+# PENDING-EXTERNAL.md — 待外部验证清单
+
+> 提示词 2.10 第 5 条：外部环境缺失**不得让项目停摆**。受影响项标 `待外部验证`，
+> 逐项写清「缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果」，其余里程碑继续推进。
+>
+> **纪律**：`待外部验证` 不等于 `已完成`。无设备时相关脚本一律 `exit 3 = SKIP`，
+> `SKIP` 不是通过（`tests/env.sh` 的硬约束）。
+
+更新时间：2026-10-13T02:14Z
+
+---
+
+## 1. 缺 Android 真机（影响面最大）
+
+**缺什么**：一台处于 `device` 状态的 Android 设备（Android 8 / 10 / 13 / 15 中至少一台；
+arm64 优先），且已刷 KernelSU / Magisk / APatch 之一。
+
+**当前证据**：
+
+```
+$ adb devices -l
+List of devices attached
+（空）
+```
+
+**怎么补**：USB 连接设备并开启 USB 调试；或 `adb connect <ip>:5555` 连接无线调试设备；
+或启动模拟器（模拟器只能作补充，真机项不得用模拟器替代，见 12.2 第 2 条）。
+
+**补齐后跑**：
+
+```bash
+bash tests/run_e2e.sh              # 端到端：真起隧道、真发请求
+bash tests/run_feature_matrix.sh   # 13 个功能的最低可用路径
+bash tests/run_leak_check.sh       # 7 个维度的实际泄漏检测
+bash tests/run_hook_check.sh       # Hook 装载 / 命中 / 卸载
+bash tests/run_restore_check.sh    # 真机安装 → 卸载 → 系统状态 diff
+bash tests/ui_runtime_check.sh     # 真实执行 UI 逻辑（非静态检查）
+bash tests/ui_screenshot.sh        # 截图 + 布局/裁剪断言
+bash tests/ui_glass_perf.sh        # 三档玻璃强度的 P90 帧耗时 / 丢帧率
+bash tests/run_kernel.sh           # 内核与隧道
+```
+
+**期望结果**：各脚本退出码 0（当前均为 3 = SKIP）。
+`tests/run_feature_matrix.sh` 的 13 项从 `不可用` 变为 `可用`，README 的
+「功能可用性报告」同步更新。
+
+**影响哪些里程碑完成判定**：M1（真机刷入可启动与卸载）、M2（P90 ≤ 24ms 且自动降级生效）、
+M3（两种模式真机上网、冷启动 < 800ms）、M4–M13 全部（都要求最低可用路径真机通过）。
+
+---
+
+## 2. 无 GitHub Release（自更新链路无法端到端验证）
+
+**缺什么**：至少一个 Release，附模块 ZIP + 分 ABI APK + `update.json` + SHA-256。
+
+**怎么补**：本轮已产出可发布产物（`dist/`，见 `docs/EVIDENCE.md`），
+打 tag 后建 Release 并上传即可：
+
+```bash
+# 令牌不得落盘：用一次性注入，不要写进 remote URL 或 credential store
+B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+git -c http.extraheader="Authorization: Basic $B64" push origin main
+# tag 与 Release 用 gh CLI（未安装时先装：见 README「构建环境」）
+gh release create v0.1.0 dist/syfuse-0.1.0.zip dist/*.apk \
+  --title "v0.1.0 骨架版本" --notes-file CHANGELOG.md
+```
+
+**补齐后跑**：
+
+```bash
+python tools/verify_remote.py      # 远程树与本地 HEAD 的 path/mode/blob 一致性
+python tools/verify_files.py dist/MANIFEST.sha256
+curl -sSL -o /dev/null -w '%{http_code}\n' \
+  https://github.com/vip-svip/Syfuse/releases/latest/download/syfuse-0.1.0.zip   # 期望 200（需仓库公开）
+```
+
+**期望结果**：`update.json` 的 `zipUrl` 返回 200 且 SHA-256 与
+`dist/MANIFEST.sha256` 一致；模块内更新器先验哈希再解压，失败丢弃并保留旧版。
+
+**当前状态**：`update.json` 的 `zipUrl` / `changelog` 已按真实产物与真实 owner 生成
+（`sha256=fe896710…`），但 Release 尚不存在，故链接当前为 404。
+
+---
+
+## 3. 仓库为 private（`updateJson` 与 raw 地址不可匿名访问）
+
+**缺什么**：仓库公开（或改用带令牌的分发通道）。
+
+**为什么现在不改**：提示词 2.6 与 18.6 第 3 条 —— **仓库一律先建 private，
+任何情况都不自行改 public**。这是不可逆动作，不自行放开。
+
+**怎么补**：由仓库所有者在 GitHub 仓库 Settings → General → Danger Zone → Change visibility
+手动改为 public；或保持 private 并在 App 内用令牌访问。
+
+**补齐后跑**：
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://raw.githubusercontent.com/vip-svip/Syfuse/main/update.json            # 期望 200
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://raw.githubusercontent.com/vip-svip/Syfuse/main/module.prop           # 期望 200
+```
+
+**期望结果**：两个地址均 200。`module/module.prop` 与 `update.json` 中已就地写明
+"private 期间该地址不可用是有意登记的已知前提，公开后无需改动即生效"。
+
+---
+
+## 4. 无 Zygisk / LSPosed 框架（Hook 能力只能降级验证）
+
+**缺什么**：已刷 Zygisk / ReZygisk / Zygisk Next / LSPosed 之一的目标设备。
+
+**怎么补**：在已 root 的设备上刷入 LSPosed（或 Zygisk Next）。
+
+**补齐后跑**：`bash tests/run_hook_check.sh`
+
+**期望结果**：`Hook 装载 / 命中 / 卸载` 三段均有真实输出，命中计数增长；
+无框架时按 2.6 走 TPROXY/VPN 等价方案（能力降级而非功能缺失），该降级路径已实现，
+但**降级路径本身也需要真机验证**。
+
+---
+
+## 5. 本轮未能执行的其余检查（同属「待外部验证」）
+
+| 检查 | 阻塞原因 | 补齐条件 |
+|---|---|---|
+| `tests/run_feature_matrix.sh` 的 13 项最低可用路径 | 无设备 | 同第 1 项 |
+| `tests/ui_runtime_check.sh` / `ui_screenshot.sh` | 无设备 | 同第 1 项 |
+| `tests/ui_glass_perf.sh` 的三档帧耗时实测 | 无设备 | 同第 1 项 |
+| `tests/run_kernel.sh`（隧道吞吐、冷启动） | 无设备 | 同第 1 项 |
+| M4–M13 全部功能 | 代码未实现（不是外部阻塞） | 见 `PROGRESS.md` 的 `NEXT_ACTION` |
+
+> 第 5 项中"M4–M13 代码未实现"**不是外部阻塞**，是本项目的正常进度，
+> 已按里程碑登记在 `PROGRESS.md`，不在此处重复计入。

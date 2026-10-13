@@ -10,6 +10,41 @@
 
 ## [未发布]
 
+### 修复（交付链路与身份一致性）
+
+这一轮没有加新功能，全部是"让已有的东西真的成立"。
+
+- **`package.sh` 会在 `zip` 缺失时静默产出不完整产物并退出 0**。Windows Git Bash 默认没有
+  `zip`，于是**模块 ZIP（提示词 3.5 的交付主体）根本没被生成**，脚本却报"打包完成"。
+  修法：加 Python `zipfile` 便携回退（保留权限位），两条路径都失败则走缺件路径，
+  且**缺件时退出码改为 1**。现在 `dist/syfuse-0.1.0.zip` 可产出并通过 SHA-256 自校验。
+- **失效的仓库 URL**。`.github/ISSUE_TEMPLATE/*.yml` 与 `update.json` 里的
+  `github.com/vipsvip/Syfuse` 是错的 —— `vipsvip` 是**包名段**（Java 包名不能有连字符），
+  不是 GitHub 账号 `vip-svip`，链接全部 404。已修正，并给 `tools/set_owner.sh` 补上
+  URL owner 改写（原脚本只改包名引用，这正是缺口长期存在的原因）。
+- **`update.json` 与实际产物对不上**：`zipUrl` 的资产名是 `Syfuse-Module-v0.1.0.zip`，
+  而实际产出是 `syfuse-0.1.0.zip`；`changelog` 指向错误的 owner。现在由 `package.sh`
+  从 `git remote` 解析 owner 后写入，`sha256` 与构建产物一致。
+- **Go module path 指向不存在的仓库**（`github.com/vipsvip/syfuse/src`）→ 对齐真实仓库路径
+  `github.com/vip-svip/syfuse/src`，`go build` / `go test` 复验通过。
+- **玻璃策略层的"超标两次提示用户"从未触发过**。`GlassPerformanceController.onFrame`
+  在降档后调用 `monitor.reset()`，紧接着的帧样本不足；旧实现只看 `isOverBudget()`
+  （样本不足时它也返回 `false`），于是每轮都把 `consecutiveViolations` 清零，
+  `WARN_AFTER_VIOLATIONS = 2` **不可达**。修法：新增 `FrameMonitor.hasEnoughSamples()`，
+  样本不足时不下结论也不清计数。已补回归用例钉住。
+- **`tools/set_owner.sh` 在受限环境下超时**（每文件 spawn `grep`/`sed`/`rm`，183 个文件
+  >180 s）。改为 `git grep -l` 先筛候选 + `sed -i` 就地改写，实测降到 **33 s**。
+- 文档陈旧引用：`CHANGELOG` 里 `kernel/tools/build_aar.sh` 在目录重构后已不存在（实际为
+  `src/tools/build_aar.sh`）；README 的状态徽章与「功能可用性报告」仍停留在 M1，
+  与已落地的 M2 代码矛盾。
+
+### 新增
+
+- `ui/src/test/.../GlassPolicyTest.kt`：玻璃策略层 26 条 JVM 用例（强度档位、白名单、
+  层数上限、P90 判定、超标降档状态机）。**补它的原因**：`Glass.kt` 的文件注释一直声称
+  这个测试类存在，实际不存在 —— 那是一句无法验证的声明，提示词 2.9 不允许。
+- `PROGRESS.md`、`PENDING-EXTERNAL.md`、`docs/EVIDENCE.md`：续跑协议与证据落盘（提示词 2.10 / 18.1 要求，此前缺失）。
+
 ### 计划中（M2）
 
 - 代理内核（Go，`gomobile bind` → AAR），静态随包
@@ -17,6 +52,7 @@
 - 订阅解析：ss / ssr / vmess / vless / trojan / hysteria
 - 规则引擎接入数据面（当前规则引擎可离线运行，但无数据面调用它）
 - 域名嗅探与 DNS 分流
+- 界面文案抽取到 `strings.xml`（当前 117 处内联）
 
 ---
 
@@ -154,7 +190,7 @@
 | 本地 API | 只有接口约定，未实现 |
 | 界面文案本地化 | 117 处用户可见文案内联在 Compose / ViewModel 中，尚未抽取到 `strings.xml`。`tests/ui_assets_check.sh` 会统计并打印该数字。抽取时 ViewModel 侧需改为"携带资源 ID 的错误类型 + UI 层解析"，是一个独立重构任务 |
 | 规则引擎线性路径索引化 | 实测单次匹配 p99 = **0.965 ms**，**超出 0.5 ms 预算约 1.9 倍**。根因：未命中域名 Trie 的请求需逐条测试全部 10,000 条线性正则规则，是 O(n) 路径。修法是给正则规则提取必需字面量子串并按字面量分桶（uBlock Origin 同类思路）。**未在本次交付中实施**：需要改动 `PatternCompiler` 与 `FilterEngine` 核心匹配路径，而现有 38 条语料期望只覆盖语义正确性，不足以证明索引化后语义不变。顺序是先补语料、再改索引 |
-| 内核 AAR 构建 | `kernel/tools/build_aar.sh` 已就绪（含 ABI 映射、前置检查、缺失时 exit 2），但需要 gomobile + NDK，本次未执行。因此 `engine` 仍绑定 `NotLinkedDataPlane` |
+| 内核 AAR 构建 | `src/tools/build_aar.sh` 已就绪（含 ABI 映射、前置检查、缺失时 exit 2），但需要 gomobile + NDK，本次未执行。因此 `engine` 仍绑定 `NotLinkedDataPlane` |
 
 ### 性能实测（原始数据见 `tests/perf_results.txt`）
 

@@ -10,8 +10,13 @@ build/
 dist/
 # Go 内核产物
 kernel/out/
+# gomobile bind 的输出目录（AAR + 伴生 sources.jar，均为构建产物）
+src/out/
 *.aar
 *.so
+*.jar
+# gomobile 的 -sources.jar 是 bind 的副产品，不是源码，不入库
+!gradle/wrapper/gradle-wrapper.jar
 # Go 构建缓存（正常应位于仓库外，这里兜底）
 kernel/go-path/
 kernel/go-cache/

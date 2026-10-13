@@ -144,7 +144,9 @@ func TestEngine_ParseSubscriptionJSON_PartialSuccess(t *testing.T) {
 		"坏行",
 	}, "\n")
 
-	nodesJSON, errSummary, err := e.ParseSubscriptionJSON(content)
+	// 用 detailed 形态：需要区分"解析成功但有坏行"与"整体失败"，
+	// 而导出给移动端的两返回值形态会把两者都塞进 error（gomobile 约束）。
+	nodesJSON, errSummary, err := e.parseSubscriptionJSONDetailed(content)
 	if err != nil {
 		t.Fatalf("ParseSubscriptionJSON 不应整体失败: %v", err)
 	}
@@ -159,15 +161,48 @@ func TestEngine_ParseSubscriptionJSON_PartialSuccess(t *testing.T) {
 	}
 }
 
+// TestParseSubscriptionJSON_ExportedFormKeepsSummaryInError 守住导出形态不丢信息。
+//
+// gomobile 只接受 `(值[, error])` 两返回值，导出函数因此把逐行摘要并入 error。
+// 若某次重构把摘要**丢掉**（只返回 nil），移动端就再也看不到"哪几行坏了"，
+// 而 Go 内部测试仍会通过 —— 这条断言专门盯住那个缝隙。
+func TestParseSubscriptionJSON_ExportedFormKeepsSummaryInError(t *testing.T) {
+	content := strings.Join([]string{
+		"ss://" + b64url("aes-256-gcm:pw") + "@1.1.1.1:8388#ok",
+		"坏行",
+	}, "\n")
+	e := NewEngine()
+
+	out, err := e.ParseSubscriptionJSON(content)
+	if err == nil {
+		t.Fatal("有坏行时导出形态必须返回非 nil error（摘要不能丢）")
+	}
+	if !strings.Contains(err.Error(), "行") {
+		t.Errorf("error 应携带含行号的摘要，得到: %v", err)
+	}
+	if !strings.Contains(out, "1.1.1.1") {
+		t.Errorf("即便有坏行，成功解析的节点也必须返回: %s", out)
+	}
+
+	// 全部成功时，error 必须为 nil，否则调用方无法区分"全好"与"部分坏"。
+	clean, err := e.ParseSubscriptionJSON("ss://" + b64url("aes-256-gcm:pw") + "@1.1.1.1:8388#ok")
+	if err != nil {
+		t.Errorf("全部解析成功时 error 应为 nil，得到: %v", err)
+	}
+	if clean == "" {
+		t.Error("应返回节点 JSON")
+	}
+}
+
 func TestPackageLevel_ParseNodesJSON(t *testing.T) {
 	// 包级函数与引擎方法必须行为一致 —— 否则两条路径会漂移
 	content := "ss://" + b64url("aes-256-gcm:pw") + "@1.1.1.1:8388#ok"
-	a, _, err := ParseNodesJSON(content)
+	a, err := ParseNodesJSON(content)
 	if err != nil {
 		t.Fatalf("包级解析失败: %v", err)
 	}
 	e := NewEngine()
-	b, _, err := e.ParseSubscriptionJSON(content)
+	b, err := e.ParseSubscriptionJSON(content)
 	if err != nil {
 		t.Fatalf("方法解析失败: %v", err)
 	}

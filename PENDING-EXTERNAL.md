@@ -146,9 +146,39 @@ gomobile init
 
 **补齐后跑**：`bash src/tools/build_aar.sh`
 
-**期望结果**：`kernel/out/*.aar` 产出，且 `unzip -l` 里能看到
-`jni/<abi>/libsyfuse.so`（arm64-v8a / armeabi-v7a / x86_64 三个 ABI）。
-之后按 `PROGRESS.md` 的 `NEXT_ACTION` 接 T2（Go 侧 `proxies.*` 真实现）→ T3。
+**期望结果**：`src/out/*.aar` 产出，且 `unzip -l` 里能看到
+`jni/<abi>/libgojni.so`（arm64-v8a / armeabi-v7a / x86_64 三个 ABI）。
+
+> **勘误（2026-10-13 实测）**：本条原写"能看到 `libsyfuse.so`"，**与实际不符**。
+> `gomobile bind` 生成的 AAR 里原生库文件名固定为 `libgojni.so`（gomobile 的运行时
+> 入口就叫 gojni），不是按 Go 包名命名。按原文字面去断言会永远失败，而失败原因是
+> "断言写错了"而不是"构建没成功" —— 这会让一个真实成功的构建被误判为受阻。
+> 已按实测改正。
+>
+> 2026-10-13 实测结论：**本项已完成**。三个 ABI 全部构建成功
+> （arm64-v8a 2 002 746 B / armeabi-v7a 1 999 696 B / x86_64 2 155 723 B），
+> 每个 AAR 内含 `jni/<abi>/libgojni.so` 与 `classes.jar`（生成的 Java 绑定：
+> `syfuse/Engine.java`、`syfuse/Node.java`、`syfuse/Syfuse.java` 等）。
+> 过程中真正需要的三项前置在原文里**没有写全**，见下方"实测补齐步骤"。
+> 之后按 `PROGRESS.md` 的 `NEXT_ACTION` 接 T2（Go 侧 `proxies.*` 真实现）→ T3。
+
+**实测补齐步骤（原文缺的关键一步）**：
+
+1. `gomobile` 当前 latest 要求 **Go ≥ 1.26**，而已装的工具链是 1.23.4。
+   用 `GOTOOLCHAIN=local` 会在 `install` 阶段直接被拒；
+   不带 `GOTOOLCHAIN=local` 又会在下载 1.26 时撞上 `GOFLAGS`/sumdb 冲突。
+   → 需先装 Go 1.26（本机落在 `~/.workbuddy-ai/toolchain/go1.26`）。
+2. **`gomobile init` 必须显式跑一次**。跳过它时 `gomobile bind` 报
+   `gobind was not found`；`init` 之后会在 `$GOPATH/bin` 落下 `gobind.exe`。
+3. `javac` 必须在 PATH 里（gomobile 要编译生成的 Java 绑定）。
+   只设 `JAVA_HOME` 不够 —— 实测报 `exec: "javac": executable file not found in %PATH%`。
+   三者（go / javac / gomobile）都要在 PATH 首位，且 `go` 必须是 1.26。
+
+**另外发现并修掉的一个真实缺陷**：`ParseNodesJSON` 与
+`Engine.ParseSubscriptionJSON` 原本返回 `(string, string, error)`，
+而 `gomobile bind` 只接受 `(零或一个值[, error])`，导致构建报
+`too many result values`。已拆成"导出两返回值 + 内部 detailed 三返回值"两层，
+既满足 gomobile 约束，又不丢"哪几行坏了"的信息（并有专项测试守住摘要不被丢弃）。
 
 > 这一项与第 1 项不同：它是**主机工具链缺口**，补齐后不需要真机即可验证
 > 「AAR 构建 + 静态链接 + 最小代理链路」；只有隧道真的跑流量时才需要设备。

@@ -1,0 +1,35 @@
+! ============================================================
+! Syfuse 规则一致性语料 04 —— host 文件族 / dnsmasq / IPv4 网段 / 重写
+! 覆盖 6.1 的 hosts 三段语义：
+!   0.0.0.0 / 127.0.0.1 → 黑洞拦截
+!   其它地址           → 解析重写（rewrite）
+! 以及 dnsmasq 的 address=/local=/server=/ 三种形态与 IPv4 网段边界。
+! 期望结果见 tests/expect.tsv，由 CorpusConsistencyTest 逐条断言。
+! ============================================================
+[Adblock Plus 2.0]
+
+! ---- hosts：黑洞地址族 ----
+0.0.0.0 host-zero.test
+127.0.0.1 host-loop.test
+:: host-v6any.test
+::1 host-v6loop.test
+
+! ---- hosts：重写地址族 ----
+1.2.3.4 host-rw-a.test
+9.9.9.9 host-rw-b.test
+0.0.0.0 host-multi.test host-multi2.test
+
+! ---- dnsmasq 三种形态 ----
+address=/dq-a.test/
+address=/dq-b.test/9.9.9.9
+local=/dq-c.test/
+server=/dq-d.test/1.1.1.1
+
+! ---- IPv4 网段 ----
+10.20.0.0/16
+192.168.50.0/24
+172.16.0.0/12
+
+! ---- IPv4 网段边界 ----
+10.20.255.255
+10.21.0.0

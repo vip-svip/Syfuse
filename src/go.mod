@@ -1,6 +1,6 @@
 module github.com/vip-svip/syfuse/src
 
-go 1.23
+go 1.26.0
 
 // 刻意**不引入任何第三方依赖**。
 //
@@ -15,3 +15,11 @@ go 1.23
 //
 // 如果将来必须引入依赖（例如 QuickJS 脚本引擎、protobuf）：
 // 请在 NOTICE 登记其许可证，确认与 GPL-3.0-or-later 兼容，并同步更新那条断言。
+//
+// 关于 gomobile：
+//   gomobile 是**构建工具**，不是本模块的依赖。它由 tools/build_aar.sh 显式安装到
+//   GOPATH/bin 并在模块目录外调用（脚本用 `-mod=mod` + 独立 GOMODCACHE 隔离）。
+//   因此这里既没有 require 也没有 go.sum —— 这正好与 tests/run_kernel.sh 的
+//   "无 require / 无 go.sum" 断言一致。
+//   踩过的坑：早期直接在 src/ 下 `go install golang.org/x/mobile/cmd/gomobile@latest`
+//   会把 x/mobile 写进本模块的 go.mod（require）并生成 go.sum，直接违反上面的断言。

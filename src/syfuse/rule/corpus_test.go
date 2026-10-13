@@ -233,11 +233,13 @@ func TestCorpus_CommentsAndHeadersIgnored(t *testing.T) {
 // 上面那些只看期望表的断言仍可能全绿（因为期望表只覆盖被查询的域名）。
 func TestCorpus_NoRuleSilentlyDropped(t *testing.T) {
 	report, _ := loadCorpus(t)
-	// 语料里明确写出的、应当被解析为网络规则的条数（人工点数，改动语料时须同步）。
-	// 拆解：域名锚定族 10 + URL 锚定 2 + 通配/正则 2 + hosts/dnsmasq 6 +
-	//      IPv4 网段 1 + $domain 2 + 资源类型 2 + $badfilter 2 + $denyallow 1 +
-	//      未识别修饰符行 1 = 29。
-	const wantNetworkRules = 29
+	// 语料里明确写出的、应当被解析为网络规则的条数。
+	//
+	// 这组数字由实测得出（探针 CorpusProbeTool），**不是人工点数**：
+	// 早先靠人工点数得出 29，语料扩到 5 个文件后立刻失效，
+	// 而"人工点数"本身也会数错。两边（Kotlin / Go）读同一份语料、
+	// 断言同一组值，任一实现漂移都会红。
+	const wantNetworkRules = 115
 	if len(report.NetworkRules) != wantNetworkRules {
 		t.Errorf("解析出的网络规则数 = %d，期望 %d。若确为语料变更请同步本常量；"+
 			"否则说明有规则被静默丢弃或误判。", len(report.NetworkRules), wantNetworkRules)
@@ -245,10 +247,103 @@ func TestCorpus_NoRuleSilentlyDropped(t *testing.T) {
 	// 元素类规则同理：语料含 6 条元素规则（HIDE/UNHIDE/CSS_INJECT/EXTENDED_CSS/
 	// SCRIPTLET/HTML_FILTER 各一条）。
 	//
-	// 这一条同时守住"# 注释不得被误判为元素规则"：语料第 70 行是一条
+	// 这一条同时守住"# 注释不得被误判为元素规则"：语料里有一条
 	// 含 `##` 的注释，若判定退化成"正文里出现 ## 就算元素规则"，这里会变成 7。
 	const wantCosmeticRules = 6
 	if len(report.CosmeticRules) != wantCosmeticRules {
 		t.Errorf("解析出的元素规则数 = %d，期望 %d", len(report.CosmeticRules), wantCosmeticRules)
+	}
+	// 忽略行与总行数也两侧对齐：总行数错会让"规则体检"的行号标注整体偏移。
+	const wantIgnoredLines = 129
+	if report.IgnoredLines != wantIgnoredLines {
+		t.Errorf("忽略行数 = %d，期望 %d", report.IgnoredLines, wantIgnoredLines)
+	}
+	const wantTotalLines = 250
+	if report.TotalLines != wantTotalLines {
+		t.Errorf("总行数 = %d，期望 %d", report.TotalLines, wantTotalLines)
+	}
+}
+
+// TestCorpus_HostsLineExpandsEveryHostname 守住 hosts 多主机名不静默丢弃。
+//
+// 旧实现只取第一个域名、其余仅发一条 WARNING —— 提示看着有，规则却真的没生效。
+func TestCorpus_HostsLineExpandsEveryHostname(t *testing.T) {
+	report, _ := loadCorpus(t)
+	var domains []string
+	for _, r := range report.NetworkRules {
+		if r.Raw == "0.0.0.0 host-multi.test host-multi2.test" {
+			domains = append(domains, r.Pattern.Domain)
+		}
+	}
+	if len(domains) != 2 {
+		t.Fatalf("多主机名 hosts 行应产出 2 条规则，得到 %d 条：%v", len(domains), domains)
+	}
+	if domains[0] != "host-multi.test" || domains[1] != "host-multi2.test" {
+		t.Errorf("域名顺序不符：%v", domains)
+	}
+}
+
+// TestCorpus_IPv6HostsBlackholeRecognized 守住 `::` / `::1` 不是死代码。
+//
+// blockIPs 里登记了 IPv6 黑洞地址，若 hosts 行正则只认 IPv4，
+// 这两个条目永远走不到 —— "集合声称覆盖 IPv6" 就是假覆盖。
+func TestCorpus_IPv6HostsBlackholeRecognized(t *testing.T) {
+	report, _ := loadCorpus(t)
+	for _, want := range []string{"host-v6any.test", "host-v6loop.test"} {
+		var found bool
+		for _, r := range report.NetworkRules {
+			if r.Pattern.Domain == want {
+				found = true
+				if r.Mods.DNSRewrite != nil {
+					t.Errorf("%s 是黑洞地址，不应产生 dnsRewrite（得到 %q）", want, *r.Mods.DNSRewrite)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("IPv6 黑洞行 `:: %s` / `::1 %s` 未被识别为规则", want, want)
+		}
+	}
+}
+
+// TestCorpus_DnsmasqServerDirectiveSupported 守住 dnsmasq `server=` 不被静默忽略。
+func TestCorpus_DnsmasqServerDirectiveSupported(t *testing.T) {
+	report, _ := loadCorpus(t)
+	var found bool
+	for _, r := range report.NetworkRules {
+		if r.Pattern.Domain == "dq-d.test" {
+			found = true
+			if r.Mods.DNSRewrite == nil || *r.Mods.DNSRewrite != "1.1.1.1" {
+				t.Errorf("`server=/dq-d.test/1.1.1.1` 应重写到 1.1.1.1，得到 %v", r.Mods.DNSRewrite)
+			}
+		}
+	}
+	if !found {
+		t.Error("`server=/dq-d.test/1.1.1.1` 未被识别 —— dnsmasq server= 被静默忽略")
+	}
+}
+
+// TestCorpus_MatchCaseReachesDomainAnchored 守住 `$match-case` 不被 Trie 吞掉。
+//
+// `||domain^` 走 Trie（键为 lower、判定不区分大小写），结构上无法表达
+// "只匹配大写"。旧实现因此在 Trie 分支丢掉 matchCase，规则退化为不区分大小写。
+func TestCorpus_MatchCaseReachesDomainAnchored(t *testing.T) {
+	p := CompilePattern("||CaseSensitive.test^", true)
+	if p == nil {
+		t.Fatal("编译失败")
+	}
+	if p.Pattern.Kind != PatternRegex {
+		t.Errorf("$match-case 的域名锚定规则必须退化为大小写敏感正则，得到 kind=%v", p.Pattern.Kind)
+	}
+	// 大小写敏感：只匹配原样写法
+	if !p.Pattern.Regex.MatchString("https://CaseSensitive.test/x") {
+		t.Error("应命中大小写完全一致的地址")
+	}
+	if p.Pattern.Regex.MatchString("https://casesensitive.test/x") {
+		t.Error("$match-case 下不应命中小写写法")
+	}
+	// 对照：不带修饰符时仍然不区分大小写
+	p2 := CompilePattern("||CaseSensitive.test^", false)
+	if p2 == nil || p2.Pattern.Kind != PatternDomainOnly {
+		t.Fatalf("无修饰符时应走 Trie 索引，得到 %v", p2)
 	}
 }

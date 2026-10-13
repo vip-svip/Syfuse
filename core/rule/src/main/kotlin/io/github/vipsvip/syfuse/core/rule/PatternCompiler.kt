@@ -48,7 +48,7 @@ internal object PatternCompiler {
 
         // 2) 域名锚定 ||
         if (pattern.startsWith("||")) {
-            return compileDomainAnchored(pattern.substring(2), flags)
+            return compileDomainAnchored(pattern.substring(2), flags, matchCase)
         }
 
         // 3) 协议锚定 / 起始锚定
@@ -80,13 +80,31 @@ internal object PatternCompiler {
             ?.let { Compiled(RulePattern.RegexPattern(it), null) }
     }
 
-    private fun compileDomainAnchored(rest: String, flags: Set<RegexOption>): Compiled? {
+    private fun compileDomainAnchored(
+        rest: String,
+        flags: Set<RegexOption>,
+        matchCase: Boolean,
+    ): Compiled? {
         val domain = readDomainPrefix(rest) ?: return null
         val remainder = rest.substring(domain.length)
         val lower = domain.lowercase()
 
         // 纯域名形态：交给 Trie，DNS 层 O(标签数) 命中
+        //
+        // `$match-case` 例外：Trie 的键是 lower 过的域名，命中判定（DomainTrie.hostMatchesDomain）
+        // 也是大小写不敏感 —— 它结构上无法表达"只匹配大写写法"。若在此处仍走 Trie，
+        // 规则 `||CaseSensitive.test^$match-case` 会连 `casesensitive.test` 一起拦下，
+        // 即 `$match-case` 被静默丢弃。因此该情形必须绕开 Trie，退回大小写敏感的正则。
         if (remainder.isEmpty() || remainder == "^") {
+            if (matchCase) {
+                // 大小写敏感：显式锚定域名边界，语义与 Trie 分支一致（子域命中、后缀不可误配）
+                val body = buildString {
+                    append("^([a-z][a-z0-9+.\\-]*:)?//(?:[^/?#@]*@)?(?:[^/?#]*\\.)?")
+                    append(Regex.escape(domain))
+                    append(SEPARATOR)
+                }
+                return regex(body, flags)?.let { Compiled(RulePattern.RegexPattern(it), lower) }
+            }
             return Compiled(RulePattern.DomainOnly(lower), lower)
         }
 

@@ -23,8 +23,16 @@ object RuleParser {
             get() = diagnostics.filter { it.severity == RuleDiagnostic.Severity.WARNING }
     }
 
-    private val DNSMASQ = Regex("^(address|local)=/([^/]+)/?(.*)$", RegexOption.IGNORE_CASE)
-    private val HOSTS_LINE = Regex("^(\\d{1,3}(?:\\.\\d{1,3}){3})\\s+(.+)$")
+    // dnsmasq：address=/d/ 拦截；address=/d/ip 重写；local=/d/ 本地应答；
+    //          server=/d/ip 指定上游（在过滤语义里与 address=/d/ip 同样表现为"重写"）。
+    // 缺 `server` 会让一批真实 dnsmasq 配置被当作"未识别行"静默忽略。
+    private val DNSMASQ = Regex("^(address|local|server)=/([^/]+)/?(.*)$", RegexOption.IGNORE_CASE)
+    // hosts 行：IPv4 或 IPv6（含 `::` / `::1` / 完整展开形式）作地址。
+    // 只写 IPv4 会让 `:: host` 这类行整行落空，而 BLOCK_IPS 里明明登记了 `::` / `::1` ——
+    // 集合声称覆盖 IPv6，实际永远走不到，是一处"死代码 + 假覆盖"。
+    private val HOSTS_LINE = Regex(
+        "^(\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9a-fA-F:]*:[0-9a-fA-F:]+)\\s+(.+)$",
+    )
     private val BLOCK_IPS = setOf("0.0.0.0", "127.0.0.1", "::", "::1")
 
     /** 解析整份规则文本。 */
@@ -43,6 +51,10 @@ object RuleParser {
             when (val outcome = parseLine(rawLine, lineNo, sourceId, defaultKind)) {
                 is ParseOutcome.Network -> {
                     network.add(outcome.rule)
+                    diags.addAll(outcome.warnings)
+                }
+                is ParseOutcome.NetworkMany -> {
+                    network.addAll(outcome.rules)
                     diags.addAll(outcome.warnings)
                 }
                 is ParseOutcome.Cosmetic -> cosmetic.add(outcome.rule)
@@ -213,29 +225,19 @@ object RuleParser {
             val ip = m.groupValues[1]
             val hosts = m.groupValues[2].split(Regex("\\s+")).map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             if (hosts.isEmpty()) return invalid(lineNo, line, sourceId, "hosts 行缺少主机名")
-            // hosts 一行可挂多个主机名，这里按第一个生成规则，其余追加为同源规则由调用方展开。
-            // 为保持"一行一规则"的可追溯性，额外主机名通过 warnings 提示而不是静默丢弃。
+            // hosts 一行可挂多个主机名。**每个主机名都必须产出规则**：
+            // 只取第一个 + 打个 WARNING 看着"有提示"，实际效果是把规则静默丢掉了 ——
+            // 用户以为整行生效，实际只有第一个域名被拦。这正是门禁要防的
+            // "静默丢规则"，所以这里逐域名展开，不再降级为警告。
             val mods = if (ip in BLOCK_IPS) {
                 RuleModifiers()
             } else {
                 RuleModifiers(dnsRewrite = ip, rawTokens = listOf("dnsrewrite=$ip"))
             }
-            val rule = domainRule(hosts.first(), line, lineNo, sourceId, RuleKind.HOSTS, mods)
-            val warnings = if (hosts.size > 1) {
-                listOf(
-                    RuleDiagnostic(
-                        RuleDiagnostic.Severity.WARNING,
-                        lineNo,
-                        line,
-                        "hosts 行含 ${hosts.size} 个主机名，仅 `一条规则对应一个域名` 的模型可表达首个：" +
-                            hosts.drop(1).joinToString(", ") + "（已忽略）",
-                        sourceId,
-                    ),
-                )
-            } else {
-                emptyList()
+            val rules = hosts.map { h ->
+                domainRule(h, line, lineNo, sourceId, RuleKind.HOSTS, mods)
             }
-            return ParseOutcome.Network(rule, warnings)
+            return ParseOutcome.NetworkMany(rules)
         }
 
         return null

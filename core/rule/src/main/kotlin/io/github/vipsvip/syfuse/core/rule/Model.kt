@@ -272,6 +272,20 @@ sealed interface ParseOutcome {
         val warnings: List<RuleDiagnostic> = emptyList(),
     ) : ParseOutcome
 
+    /**
+     * 一行解析出**多条**网络规则。
+     *
+     * 存在的唯一理由：hosts 语法 `0.0.0.0 a.test b.test c.test` 一行可含任意多个域名。
+     * 旧实现只取第一个域名、其余仅发一条 WARNING —— 规则确实没生效，却只留了条提示，
+     * 正是"静默丢弃规则"这一类缺陷（门禁存在的意义就是拦住它）。
+     * 单条与多条分成两个类型而不是让 [Network] 携带列表，是为了让"绝大多数行只有一条规则"
+     * 这个事实保留在类型里，避免调用方到处写 `rules.first()`。
+     */
+    data class NetworkMany(
+        val rules: List<CompiledNetworkRule>,
+        val warnings: List<RuleDiagnostic> = emptyList(),
+    ) : ParseOutcome
+
     /** 成功解析出一条元素隐藏/脚本注入类规则。 */
     data class Cosmetic(val rule: CosmeticRule) : ParseOutcome
 

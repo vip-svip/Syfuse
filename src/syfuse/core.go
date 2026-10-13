@@ -158,7 +158,28 @@ func (e *Engine) NodesJSON() (string, error) {
 //
 // 返回的第二个值是人类可读的逐行错误摘要；为空表示全部解析成功。
 // 这是"部分成功"语义：坏行不会让整份订阅不可用。
-func (e *Engine) ParseSubscriptionJSON(content string) (string, string, error) {
+//
+// **签名受 gomobile 约束**：`gomobile bind` 只接受返回
+// `(零个或一个值[, error])` 的导出函数，三返回值会让整份 AAR 构建失败
+// （报 `too many result values`）。因此这里把它拆成两层：
+//   - `parseSubscriptionJSONDetailed` 保留三返回值，供 Go 内部与测试使用；
+//   - 本函数（导出的）返回 `(nodesJSON, err)`，逐行摘要并入 error，
+//     保证**信息不丢**——调用方仍能拿到"哪几行坏了"。
+func (e *Engine) ParseSubscriptionJSON(content string) (string, error) {
+	out, summary, err := e.parseSubscriptionJSONDetailed(content)
+	if err != nil {
+		return "", err
+	}
+	if summary != "" {
+		return out, fmt.Errorf("%s", summary)
+	}
+	return out, nil
+}
+
+// parseSubscriptionJSONDetailed 是三返回值形态，供 Go 内部与单元测试使用。
+// 之所以保留：Go 测试需要区分"解析成功但有坏行"与"整体失败"两件事，
+// 而导出给移动端的两返回值形态会把它们都塞进 error，类型上分不开。
+func (e *Engine) parseSubscriptionJSONDetailed(content string) (string, string, error) {
 	nodes, errs := ParseSubscription(content)
 	SortNodes(nodes)
 	out, err := MarshalNodes(nodes)
@@ -169,8 +190,8 @@ func (e *Engine) ParseSubscriptionJSON(content string) (string, string, error) {
 		return out, "", nil
 	}
 	msgs := make([]string, 0, len(errs))
-	for _, e := range errs {
-		msgs = append(msgs, e.Error())
+	for _, er := range errs {
+		msgs = append(msgs, er.Error())
 	}
 	return out, strings.Join(msgs, "; "), nil
 }
@@ -179,7 +200,21 @@ func (e *Engine) ParseSubscriptionJSON(content string) (string, string, error) {
 //
 // 提供它是因为：解析订阅是**纯函数**，不需要先构造 Engine。
 // 让调用方为了解析一个字符串而 new 一个引擎，是无谓的状态。
-func ParseNodesJSON(content string) (string, string, error) {
+//
+// 同 ParseSubscriptionJSON：导出版本必须是两返回值（gomobile 约束）。
+func ParseNodesJSON(content string) (string, error) {
+	out, summary, err := parseNodesJSONDetailed(content)
+	if err != nil {
+		return "", err
+	}
+	if summary != "" {
+		return out, fmt.Errorf("%s", summary)
+	}
+	return out, nil
+}
+
+// parseNodesJSONDetailed 是三返回值形态，供 Go 内部与单元测试使用。
+func parseNodesJSONDetailed(content string) (string, string, error) {
 	nodes, errs := ParseSubscription(content)
 	SortNodes(nodes)
 	out, err := MarshalNodes(nodes)
@@ -187,8 +222,8 @@ func ParseNodesJSON(content string) (string, string, error) {
 		return "", "", err
 	}
 	msgs := make([]string, 0, len(errs))
-	for _, e := range errs {
-		msgs = append(msgs, e.Error())
+	for _, er := range errs {
+		msgs = append(msgs, er.Error())
 	}
 	return out, strings.Join(msgs, "; "), nil
 }

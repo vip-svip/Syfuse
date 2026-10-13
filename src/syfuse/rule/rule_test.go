@@ -313,16 +313,45 @@ func TestParseLine_BlankCommentAndHeaderIgnored(t *testing.T) {
 	}
 }
 
-func TestParseLine_HostsLineMultipleHostnamesKeepsFirstAndWarns(t *testing.T) {
+func TestParseLine_HostsLineExpandsEveryHostname(t *testing.T) {
+	// 旧实现只保留首个域名、其余仅发一条 WARNING —— 用户以为整行生效，
+	// 实际只有第一个域名被拦。这是"静默丢规则"，必须逐域名展开。
 	out := ParseLine("0.0.0.0 a.test b.test", 3, "src", KindFilter)
-	if out.Kind != OutcomeNetwork {
-		t.Fatalf("kind = %v", out.Kind)
+	if out.Kind != OutcomeNetworkMany {
+		t.Fatalf("kind = %v, want OutcomeNetworkMany", out.Kind)
 	}
-	if out.Rule.Pattern.Domain != "a.test" {
-		t.Errorf("domain = %q, want a.test", out.Rule.Pattern.Domain)
+	if len(out.Rules) != 2 {
+		t.Fatalf("rules = %d, want 2", len(out.Rules))
 	}
-	if len(out.Warnings) != 1 {
-		t.Errorf("warnings = %d, want 1", len(out.Warnings))
+	if out.Rules[0].Pattern.Domain != "a.test" || out.Rules[1].Pattern.Domain != "b.test" {
+		t.Errorf("domains = %q, %q; want a.test, b.test",
+			out.Rules[0].Pattern.Domain, out.Rules[1].Pattern.Domain)
+	}
+	for _, r := range out.Rules {
+		if r.LineNo != 3 || r.SourceID != "src" {
+			t.Errorf("行号/来源未传递：lineNo=%d sourceID=%q", r.LineNo, r.SourceID)
+		}
+	}
+	// 不再降级为警告：规则是真的生效了
+	if len(out.Warnings) != 0 {
+		t.Errorf("warnings = %d, want 0", len(out.Warnings))
+	}
+}
+
+func TestParseLine_HostsIPv6BlackholeRecognized(t *testing.T) {
+	// `::` 与 `::1` 登记在 blockIPs 里，但旧 matchHostsLine 只认 IPv4，
+	// 导致这两条 IPv6 黑洞永远匹配不到任何行 —— 死代码 + 假覆盖。
+	for _, ip := range []string{"::", "::1"} {
+		out := ParseLine(ip+" host-v6.test", 7, "src", KindFilter)
+		if out.Kind != OutcomeNetworkMany || len(out.Rules) != 1 {
+			t.Fatalf("%s host-v6.test 应产出一条规则，得到 kind=%v", ip, out.Kind)
+		}
+		if out.Rules[0].Pattern.Domain != "host-v6.test" {
+			t.Errorf("domain = %q", out.Rules[0].Pattern.Domain)
+		}
+		if out.Rules[0].Mods.DNSRewrite != nil {
+			t.Errorf("%s 是黑洞地址，不应产生 dnsRewrite", ip)
+		}
 	}
 }
 
@@ -382,12 +411,19 @@ func TestHostsLineRecognizedBeforeDnsmasq(t *testing.T) {
 		t.Errorf("address=/d.test/ 应为拦截（无 dnsRewrite），得到 kind=%v", a.Kind)
 	}
 	b := ParseLine("0.0.0.0 d.test", 1, "", KindFilter)
-	if b.Kind != OutcomeNetwork || b.Rule.Mods.DNSRewrite != nil {
+	if b.Kind != OutcomeNetworkMany || len(b.Rules) != 1 || b.Rules[0].Mods.DNSRewrite != nil {
 		t.Errorf("0.0.0.0 d.test 应为拦截，得到 kind=%v", b.Kind)
 	}
 	c := ParseLine("1.2.3.4 d.test", 1, "", KindFilter)
-	if c.Kind != OutcomeNetwork || c.Rule.Mods.DNSRewrite == nil || *c.Rule.Mods.DNSRewrite != "1.2.3.4" {
+	if c.Kind != OutcomeNetworkMany || len(c.Rules) != 1 ||
+		c.Rules[0].Mods.DNSRewrite == nil || *c.Rules[0].Mods.DNSRewrite != "1.2.3.4" {
 		t.Errorf("1.2.3.4 d.test 应重写到 1.2.3.4")
+	}
+	// `server=/d/ip` 在过滤语义里与 `address=/d/ip` 同样表现为"重写"。
+	// 缺这一支会让一批真实 dnsmasq 配置被当作"未识别行"静默忽略。
+	s := ParseLine("server=/d.test/1.1.1.1", 1, "", KindFilter)
+	if s.Kind != OutcomeNetwork || s.Rule.Mods.DNSRewrite == nil || *s.Rule.Mods.DNSRewrite != "1.1.1.1" {
+		t.Errorf("server=/d.test/1.1.1.1 应重写到 1.1.1.1，得到 kind=%v", s.Kind)
 	}
 }
 

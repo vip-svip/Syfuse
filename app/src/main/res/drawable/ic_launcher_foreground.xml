@@ -1,16 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标前景层。
+
+  图形语义：**融合**（Sy + fuse）。
+  两个等大的环水平交叠，交叠区形成一个"透镜"——这正是集合论里
+  "融合"的视觉原型，也对应本应用的实质：把「代理内核」与「过滤/拦截」
+  两条独立链路合并成一条。
+
+  为什么用环而不是实心圆：
+  - 环在 24dp 的极小尺寸下仍能被区分（实心圆堆叠会糊成一团）；
+  - 环之间的空隙让背景色透出，深色 / 浅色两种启动器主题下都成立。
+
+  尺寸纪律：前景层视口 108x108，**只有中心 72x72 是安全区**（18..90）。
+  本图外接范围 x=15..93、y=27..81，纵向安全余量充足，横向仅在四角
+  方向超出 3dp —— 那两个位置是空白（圆环的极左/极右点才触及边界），
+  圆角与圆形裁切都不会切到笔画。
+
+  纯自绘几何，不含任何第三方视觉资产。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 两个交叠的环，表示"融合"。安全区为中心 72x72（18..90）。 -->
+
+    <!-- 左环：代表「代理链路」 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.92"
-        android:pathData="M54,30 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+        android:pathData="M40,54 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 右环：代表「过滤链路」 -->
     <path
+        android:pathData="M68,54 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 交叠处的「透镜」：让"两条链路合一"在视觉上有重量，
+         而不是两个空心圈擦肩而过。上下留出缺口，避免和环线粘连成色块。 -->
+    <path
+        android:pathData="M54,37 C61.5,45 61.5,63 54,71 C46.5,63 46.5,45 54,37 Z"
         android:fillColor="#FFFFFF"
-        android:fillAlpha="0.55"
-        android:pathData="M54,62 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+        android:fillAlpha="0.92" />
 </vector>

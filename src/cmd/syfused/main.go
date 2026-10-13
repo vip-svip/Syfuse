@@ -366,12 +366,22 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("rules.stats", handleRulesStats(paths))
 	srv.Handle("rules.build", handleRulesBuild(paths))
 
+	// 代理控制：真实实现（配置校验 + 节点解析 + 选择 + TCP 可达性测速）。
+	// 唯一仍属"未接通"的是**隧道本身**（内核宿主），它由 Engine.Start 如实上报
+	// not_linked，而不是由本层假装成功。
+	pm := newProxyManager()
+	srv.Handle("proxies", handleProxiesStatus(pm))
+	srv.Handle("proxies.status", handleProxiesStatus(pm))
+	srv.Handle("proxies.start", handleProxiesStart(pm, paths))
+	srv.Handle("proxies.stop", handleProxiesStop(pm))
+	srv.Handle("proxies.reload", handleProxiesReload(pm, paths))
+	srv.Handle("proxies.select", handleProxiesSelect(pm))
+	srv.Handle("proxies.urlTest", handleProxiesURLTest(pm))
+
 	// 尚未实现的方法：注册但返回明确错误。
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"proxies", "M3/M4"}, {"proxies.start", "M3"}, {"proxies.stop", "M3"},
-		{"proxies.reload", "M5"}, {"proxies.urlTest", "M4"}, {"proxies.select", "M4"},
 		{"connections", "M9"}, {"traffic", "M9"},
 		{"filter.stats", "M10"},
 		{"hook.status", "M11"}, {"leak.report", "M12"}, {"leak.fix", "M12"},

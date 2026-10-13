@@ -254,6 +254,25 @@ func MarshalNodes(nodes []Node) (string, error) {
 	return string(b), nil
 }
 
+// DecodeNodesJSONList 把 MarshalNodes 的输出解回节点列表。
+//
+// 存在的理由：守护进程要拿"App 看到的那份节点表"来做测速与选择，
+// 而 MarshalNodes 的输出**已剔除凭据**。走同一条序列化路径能保证
+// 两边看到的是同一份真相，不会出现"UI 显示 3 个节点、测速却报 5 个"
+// 这类两套数据源的问题。
+//
+// 解出的节点**不含凭据**（输入里本来就没有），因此不可用于建立连接。
+func DecodeNodesJSONList(s string) ([]Node, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	var out []Node
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MarshalNodesWithSecrets 序列化**含凭据**的节点。
 //
 // 调用方有责任不把它写进日志、不落明文磁盘、不跨到非受信进程。

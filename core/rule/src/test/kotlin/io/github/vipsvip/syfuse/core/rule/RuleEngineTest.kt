@@ -195,11 +195,30 @@ class RuleParserTest {
     }
 
     @Test
-    fun `hosts 行多主机名时保留首个并给出警告`() {
+    fun `hosts 行多主机名时逐个展开而非静默丢弃`() {
+        // 旧实现只保留首个域名、其余仅发一条 WARNING —— 用户以为整行生效，
+        // 实际只有第一个域名被拦。这是"静默丢规则"，门禁必须拦住它。
         val outcome = RuleParser.parseLine("0.0.0.0 a.test b.test", 3, "src")
-        val network = outcome as ParseOutcome.Network
-        assertThat((network.rule.pattern as RulePattern.DomainOnly).domain).isEqualTo("a.test")
-        assertThat(network.warnings).hasSize(1)
+        val many = outcome as ParseOutcome.NetworkMany
+        assertThat(many.rules.map { (it.pattern as RulePattern.DomainOnly).domain })
+            .containsExactly("a.test", "b.test").inOrder()
+        for (r in many.rules) {
+            assertThat(r.lineNo).isEqualTo(3)
+            assertThat(r.sourceId).isEqualTo("src")
+        }
+        // 不再降级为警告：规则是真的生效了
+        assertThat(many.warnings).isEmpty()
+    }
+
+    @Test
+    fun `hosts 行 IPv6 黑洞地址同样拦截`() {
+        // `::` 与 `::1` 登记在 BLOCK_IPS 里，但旧 HOSTS_LINE 正则只认 IPv4，
+        // 导致这两条 IPv6 黑洞永远匹配不到任何行 —— 死代码 + 假覆盖。
+        val outcome = RuleParser.parseLine(":: host-v6any.test", 7, "src")
+        val many = outcome as ParseOutcome.NetworkMany
+        assertThat((many.rules.single().pattern as RulePattern.DomainOnly).domain)
+            .isEqualTo("host-v6any.test")
+        assertThat(many.rules.single().mods.dnsRewrite).isNull()
     }
 }
 

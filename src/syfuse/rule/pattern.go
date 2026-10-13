@@ -131,7 +131,27 @@ func compileDomainAnchored(rest string, matchCase bool) *CompiledPattern {
 	lower := toLowerASCII(domain)
 
 	// 纯域名形态：交给 Trie，DNS 层 O(标签数) 命中
+	//
+	// `$match-case` 例外：Trie 的键是 lower 过的域名，命中判定（HostMatchesDomain）
+	// 也是大小写不敏感 —— 它结构上无法表达"只匹配大写写法"。若在此处仍走 Trie，
+	// 规则 `||CaseSensitive.test^$match-case` 会连 `casesensitive.test` 一起拦下，
+	// 即 `$match-case` 被静默丢弃。因此该情形必须绕开 Trie，退回大小写敏感的正则。
 	if remainder == "" || remainder == "^" {
+		if matchCase {
+			// 大小写敏感：显式锚定域名边界，语义与 Trie 分支一致（子域命中、后缀不可误配）
+			var sb strings.Builder
+			sb.WriteString(`^([a-z][a-z0-9+.\-]*:)?//(?:[^/?#@]*@)?(?:[^/?#]*\.)?`)
+			sb.WriteString(regexp.QuoteMeta(domain))
+			sb.WriteString(separator)
+			src := sb.String()
+			if re := compileRegex(src, matchCase); re != nil {
+				return &CompiledPattern{
+					Pattern:    RulePattern{Kind: PatternRegex, Regex: re, RegexSrc: src},
+					DomainHint: &lower,
+				}
+			}
+			return nil
+		}
 		return &CompiledPattern{
 			Pattern:    RulePattern{Kind: PatternDomainOnly, Domain: lower},
 			DomainHint: &lower,

@@ -1,0 +1,98 @@
+! ============================================================
+! Syfuse 规则一致性语料 02 —— 修饰符深水区
+! 覆盖 6.1 §"修饰符全集"里语料 01 未覆盖的部分。
+!
+! **纪律**：本文件只写引擎**已支持**的修饰符。未列入支持表的修饰符
+! （如 $redirect-rule / $replace / $sitekey / $strict3p）不得出现在这里 ——
+! 写了会被降解为 WARNING 而不是生效规则，从而让"语料覆盖"变成一层假象。
+! 那些修饰符的缺失由 RuleParser 的未知修饰符 WARNING 路径覆盖（语料 01/02 尾部）。
+! 期望结果见 tests/expect.tsv，由 CorpusConsistencyTest 逐条断言。
+! ============================================================
+[Adblock Plus 2.0]
+
+! ---- $removeparam（去掉查询参数）----
+||tracked.test^$removeparam=utm_source
+||tracked2.test^$removeparam=fbclid
+||tracked3.test^$removeparam
+
+! ---- $redirect ----
+||adframe.test^$redirect=noop.js
+||adframe2.test^$redirect=noopjs
+
+! ---- $csp ----
+||csp.test^$csp=script-src 'none'
+
+! ---- $permissions ----
+||perm.test^$permissions=geolocation=()
+
+! ---- $header ----
+||header.test^$header=set-cookie:test=1
+
+! ---- $cookie ----
+||cookie.test^$cookie=tracker
+
+! ---- $dnsrewrite ----
+||dnsrw.test^$dnsrewrite=1.2.3.4
+
+! ---- $method ----
+||method.test^$method=POST
+||method2.test^$method=~GET
+
+! ---- $3p / $1p / $third-party / $first-party ----
+||thirdparty.test^$3p
+||firstparty.test^$1p
+||thirdparty2.test^$third-party
+||firstparty2.test^$first-party
+
+! ---- 资源类型：逐个列出（与 ResourceType 枚举一一对应）----
+||rt-doc.test^$document
+||rt-sub.test^$subdocument
+||rt-script.test^$script
+||rt-image.test^$image
+||rt-style.test^$stylesheet
+||rt-xhr.test^$xmlhttprequest
+||rt-ws.test^$websocket
+||rt-webrtc.test^$webrtc
+||rt-ping.test^$ping
+||rt-object.test^$object
+||rt-media.test^$media
+||rt-font.test^$font
+||rt-mp4.test^$mp4
+||rt-popup.test^$popup
+||rt-other.test^$other
+
+! ---- $all 展开 ----
+||rt-all.test^$all
+
+! ---- 隐藏族（作用于元素规则与网络规则的不同语义）----
+||genericblock.test^$genericblock
+||generichide.test^$generichide
+||specifichide.test^$specifichide
+||elemhide.test^$elemhide
+||inlinescript.test^$inline-script
+||inlinefont.test^$inline-font
+
+! ---- $empty ----
+||emptyres.test^$empty
+
+! ---- $domain 多值与混合否定 ----
+||multi.test^$domain=site-a.test|site-b.test
+||mixed.test^$domain=~excl.test|site-b.test
+
+! ---- $client 作用域 ----
+||client.test^$client=syfuse
+
+! ---- $ctag（AdGuard 客户端标签）----
+||ctag.test^$ctag=ios
+||ctagnot.test^$ctag=~android
+
+! ---- $match-case ----
+||CaseSensitive.test^$match-case
+
+! ---- $important 与 $badfilter 的组合 ----
+||combo-a.test^$important
+||combo-a.test^$badfilter
+
+! ---- 未识别修饰符（每个都应产出 WARNING 而非静默丢弃）----
+||warn2.test^$alsobad
+||warn3.test^$anotherbad

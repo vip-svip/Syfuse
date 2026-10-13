@@ -1,0 +1,43 @@
+! ============================================================
+! Syfuse 规则一致性语料 03 —— 优先级模型与域名锚定边界
+! 覆盖优先级裁决矩阵：普通/重要 × 放行/拦截 的全组合，
+! 以及域名锚定的边界情形（子域、后缀越界、标签级误命中防护）。
+! 期望结果见 tests/expect.tsv，由 CorpusConsistencyTest 逐条断言。
+! ============================================================
+[Adblock Plus 2.0]
+
+! ---- 优先级矩阵：4 种优先级两两相遇 ----
+! 普通拦截 vs 普通放行
+@@||prio-aa.test^
+||prio-aa.test^
+! 重要拦截 vs 普通拦截
+||prio-bb.test^$important
+||prio-bb.test^
+! 重要放行 vs 普通放行
+@@||prio-cc.test^$important
+@@||prio-cc.test^
+! 重要拦截 vs 重要放行
+||prio-dd.test^$important
+@@||prio-dd.test^$important
+! 普通放行 vs 重要拦截（重要拦截胜）
+@@||prio-ee.test^
+||prio-ee.test^$important
+! 重要放行 vs 普通拦截（重要放行胜）
+@@||prio-ff.test^$important
+||prio-ff.test^
+
+! ---- 域名锚定边界 ----
+||bound-a.test^
+||bound-b.test^$important
+||bound-c.test^
+
+! ---- 标签级匹配防误伤 ----
+||label-a.test^
+
+! ---- 多级子域 ----
+||deep-a.test^
+||deep-b.test^
+
+! ---- 规则顺序不应影响裁决（同一优先级内按重要度决定）----
+||order-a.test^
+@@||order-a.test^

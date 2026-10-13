@@ -8,6 +8,8 @@ type OutcomeKind int
 const (
 	// OutcomeNetwork 表示成功解析出一条网络规则。
 	OutcomeNetwork OutcomeKind = iota
+	// OutcomeNetworkMany 表示一行解析出多条网络规则（hosts 多主机名写法）。
+	OutcomeNetworkMany
 	// OutcomeCosmetic 表示成功解析出一条元素隐藏/脚本注入类规则。
 	OutcomeCosmetic
 	// OutcomeIgnored 表示空行、注释、头部声明等无需处理的行。
@@ -23,6 +25,10 @@ type ParseOutcome struct {
 	// OutcomeNetwork 使用。
 	Rule     *CompiledNetworkRule
 	Warnings []RuleDiagnostic
+
+	// OutcomeNetworkMany 使用：一行解析出多条网络规则
+	// （唯一来源是 hosts 行 `0.0.0.0 a.test b.test` 这类多主机名写法）。
+	Rules []CompiledNetworkRule
 
 	// OutcomeCosmetic 使用。
 	Cosmetic *CosmeticRule
@@ -88,6 +94,9 @@ func Parse(text, sourceID string, defaultKind RuleKind) Report {
 		switch out.Kind {
 		case OutcomeNetwork:
 			network = append(network, *out.Rule)
+			diags = append(diags, out.Warnings...)
+		case OutcomeNetworkMany:
+			network = append(network, out.Rules...)
 			diags = append(diags, out.Warnings...)
 		case OutcomeCosmetic:
 			cosmetic = append(cosmetic, *out.Cosmetic)
@@ -277,8 +286,10 @@ func parseHostsOrDnsmasq(line string, lineNo int, sourceID string) (ParseOutcome
 		if len(hosts) == 0 {
 			return invalidOutcome(lineNo, line, sourceID, "hosts 行缺少主机名"), true
 		}
-		// hosts 一行可挂多个主机名，这里按第一个生成规则，其余追加为同源规则由调用方展开。
-		// 为保持"一行一规则"的可追溯性，额外主机名通过 warnings 提示而不是静默丢弃。
+		// hosts 一行可挂多个主机名。**每个主机名都必须产出规则**：
+		// 只取第一个 + 打个 WARNING 看着"有提示"，实际效果是把规则静默丢掉了 ——
+		// 用户以为整行生效，实际只有第一个域名被拦。这正是门禁要防的
+		// "静默丢规则"，所以这里逐域名展开，不再降级为警告。
 		var mods RuleModifiers
 		if blockIPs[ip] {
 			mods = RuleModifiers{}
@@ -286,19 +297,11 @@ func parseHostsOrDnsmasq(line string, lineNo int, sourceID string) (ParseOutcome
 			v := ip
 			mods = RuleModifiers{DNSRewrite: &v, RawTokens: []string{"dnsrewrite=" + ip}}
 		}
-		rule := domainRule(hosts[0], line, lineNo, sourceID, KindHosts, mods)
-		var warnings []RuleDiagnostic
-		if len(hosts) > 1 {
-			warnings = append(warnings, RuleDiagnostic{
-				Severity: SeverityWarning,
-				LineNo:   lineNo,
-				Raw:      line,
-				Message: "hosts 行含 " + itoa(len(hosts)) + " 个主机名，仅 `一条规则对应一个域名` 的模型可表达首个：" +
-					strings.Join(hosts[1:], ", ") + "（已忽略）",
-				SourceID: sourceID,
-			})
+		rules := make([]CompiledNetworkRule, 0, len(hosts))
+		for _, h := range hosts {
+			rules = append(rules, *domainRule(h, line, lineNo, sourceID, KindHosts, mods))
 		}
-		return ParseOutcome{Kind: OutcomeNetwork, Rule: rule, Warnings: warnings}, true
+		return ParseOutcome{Kind: OutcomeNetworkMany, Rules: rules}, true
 	}
 
 	return ParseOutcome{}, false
@@ -313,6 +316,10 @@ func matchDnsmasq(line string) (directive, domain, value string, ok bool) {
 	switch {
 	case len(rest) >= 8 && toLowerASCII(rest[:8]) == "address=":
 		directive, rest = "address", rest[8:]
+	case len(rest) >= 7 && toLowerASCII(rest[:7]) == "server=":
+		// `server=/d/ip` 指定上游。在过滤语义里与 `address=/d/ip` 同样表现为"重写"。
+		// 缺这一支会让一批真实 dnsmasq 配置被当作"未识别行"静默忽略。
+		directive, rest = "server", rest[7:]
 	case len(rest) >= 6 && toLowerASCII(rest[:6]) == "local=":
 		directive, rest = "local", rest[6:]
 	default:
@@ -343,33 +350,20 @@ func matchDnsmasq(line string) (directive, domain, value string, ok bool) {
 // 只校验形态是 1-3 位十进制 × 4 段。这样 `999.1.1.1 x` 也会被识别为 hosts 行，
 // 与 Kotlin 侧行为一致。
 func matchHostsLine(line string) (ip string, hosts []string, ok bool) {
-	i := 0
-	for seg := 0; seg < 4; seg++ {
-		if seg > 0 {
-			if i >= len(line) || line[i] != '.' {
-				return "", nil, false
-			}
-			i++
-		}
-		start := i
-		for i < len(line) && line[i] >= '0' && line[i] <= '9' {
-			i++
-		}
-		n := i - start
-		if n < 1 || n > 3 {
-			return "", nil, false
-		}
-	}
-	ip = line[:i]
-
-	// `\s+`
-	if i >= len(line) || !isASCIISpace(line[i]) {
+	ip, rest, ok := readHostsAddress(line)
+	if !ok {
 		return "", nil, false
 	}
-	for i < len(line) && isASCIISpace(line[i]) {
+
+	// `\s+`
+	if rest == "" || !isASCIISpace(rest[0]) {
+		return "", nil, false
+	}
+	i := 0
+	for i < len(rest) && isASCIISpace(rest[i]) {
 		i++
 	}
-	rest := line[i:]
+	rest = rest[i:]
 	if rest == "" {
 		return "", nil, false
 	}
@@ -380,6 +374,73 @@ func matchHostsLine(line string) (ip string, hosts []string, ok bool) {
 		}
 	}
 	return ip, hosts, true
+}
+
+// readHostsAddress 读取 hosts 行开头的地址部分，返回地址与其后的剩余文本。
+//
+// 接受 IPv4 与 IPv6 两种形态，等价于 Kotlin 的
+// `^(\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]*:[0-9a-fA-F:]+)\s+(.+)$`。
+//
+// 只认 IPv4 会让 `:: host` 这类行整行落空，而 blockIPs 里明明登记了 `::` / `::1`
+// —— 集合声称覆盖 IPv6，实际永远走不到，是一处"死代码 + 假覆盖"。
+func readHostsAddress(line string) (addr, rest string, ok bool) {
+	// IPv4 分支：1-3 位十进制 × 4 段。
+	// 注意正则**不校验**每段是否 <= 255（那是 ParseIpv4 的职责）：只校验形态。
+	// 这样 `999.1.1.1 x` 也会被识别为 hosts 行，与 Kotlin 侧行为一致。
+	if a, r, isV4 := readIpv4Shape(line); isV4 {
+		return a, r, true
+	}
+	// IPv6 分支：`[0-9a-fA-F:]*:[0-9a-fA-F:]+`，至少含一个冒号。
+	i := 0
+	for i < len(line) && isHexDigitOrColon(line[i]) {
+		i++
+	}
+	candidate := line[:i]
+	if indexByte(candidate, ':') >= 0 && hasHexDigitAfterColon(candidate) {
+		return candidate, line[i:], true
+	}
+	return "", "", false
+}
+
+// readIpv4Shape 匹配 `\d{1,3}(?:\.\d{1,3}){3}`，返回地址与其后文本。
+func readIpv4Shape(line string) (string, string, bool) {
+	i := 0
+	for seg := 0; seg < 4; seg++ {
+		if seg > 0 {
+			if i >= len(line) || line[i] != '.' {
+				return "", "", false
+			}
+			i++
+		}
+		start := i
+		for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+			i++
+		}
+		n := i - start
+		if n < 1 || n > 3 {
+			return "", "", false
+		}
+	}
+	return line[:i], line[i:], true
+}
+
+func isHexDigitOrColon(c byte) bool {
+	return c == ':' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// hasHexDigitAfterColon 对应正则里的 `[0-9a-fA-F:]+`：冒号之后必须还有至少一个
+// 十六进制位（`::` 满足：第二个字符仍是冒号也算，与正则一致）。
+func hasHexDigitAfterColon(s string) bool {
+	idx := indexByte(s, ':')
+	if idx < 0 || idx+1 >= len(s) {
+		return false
+	}
+	for j := idx + 1; j < len(s); j++ {
+		if isHexDigitOrColon(s[j]) {
+			return true
+		}
+	}
+	return false
 }
 
 func domainRule(domain, raw string, lineNo int, sourceID string, kind RuleKind, mods RuleModifiers) *CompiledNetworkRule {

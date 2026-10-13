@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  自适应图标。使用矢量而非位图：minSdk 26 起 anydpi-v26 始终生效，
-  矢量可以在任意 dpi 下保持锐利，且不需要维护多套 PNG。
-  图形为自绘的"融合"意象（两个交叠的环），不涉及任何第三方视觉资产。
+  自适应图标（Android 8.0+，minSdk 26 起始终生效）。
+
+  使用矢量而非位图：任意 dpi 保持锐利，且不需要维护 5 套 PNG。
+  三层都指向同一份前景矢量，因此**单色主题图标**（Android 13+ 的
+  Monochrome / 主题化图标）也自动获得同一图形，无需额外资产。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />

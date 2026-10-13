@@ -7,6 +7,7 @@ import io.github.vipsvip.syfuse.daemon.DaemonClient
 import io.github.vipsvip.syfuse.domain.engine.DataPlane
 import io.github.vipsvip.syfuse.domain.engine.EngineConfig
 import io.github.vipsvip.syfuse.domain.model.ConnSnapshot
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -23,11 +24,11 @@ import javax.inject.Inject
  *
  * 诚实边界（必须写清楚，否则就成了"假装内核已接入"）：
  *
- *  1. **代理隧道本身尚未实现。** [start] 把请求转发给守护进程的
- *     `proxies.start`，而守护进程把它注册为"未实现（计划里程碑 M3）"。
- *     因此 [start] 会拿到一个**可展示的真实原因**并如实失败 ——
- *     不会返回成功、不会让界面显示"已连接"。这条转发链路本身是有价值的：
- *     它证明了 App → UDS → 守护进程 → 应答 的往返是通的。
+ *  1. **`proxies.*` 已在守护进程侧真实实现**（T2）：配置校验、节点解析、
+ *     选择与测速都真的做。但**隧道本身仍未接通** ——
+ *     内核宿主（gomobile AAR）已能构建，却还没有在守护进程进程内加载。
+ *     因此 `proxies.start` 返回的 `state` 是 `not_linked` 而不是 `running`，
+ *     [start] 会据此**如实失败**，不会让界面显示"已连接"。
  *  2. **规则能力已经可用。** `rules.test` / `rules.syntax` / `rules.stats`
  *     是真实实现的，可以直接调用（见 [ruleSetStats]、[ruleDiagnostics]）。
  *  3. **无 root 分支未实现。** 设备没有 root 时，App 应当改为进程内加载
@@ -93,23 +94,48 @@ class UdsDataPlane @Inject constructor(
     }
 
     override suspend fun start(config: EngineConfig): SyfuseResult<Unit> {
-        // 把内核配置整体交给守护进程。守护进程当前会如实回"未实现（M3）"，
-        // 这条应答会被原样带回上层展示 —— 不吞掉、不美化、不假装成功。
+        // 参数名与守护进程侧 proxyStartParams 对齐（configJson / profileId / node）。
+        // 用 configJson 而不是逐字段传：配置包是一份完整文档，逐字段拆开再拼回去
+        // 会在两侧各维护一套字段映射，任一侧加字段就漂移。
         val result = client.call(
             "proxies.start",
             buildJsonObject {
+                put("configJson", config.coreConfig)
                 put("profileId", config.profile.id)
-                put("profileName", config.profile.name)
-                put("coreConfig", config.coreConfig)
-                put("tunMtu", config.tunMtu)
-                put("tunStack", config.tunStack)
-                put("autoRoute", config.autoRoute)
             },
         )
         return when (result) {
             is SyfuseResult.Success -> {
-                startedByUs = true
-                SyfuseResult.Success(Unit)
+                // 守护进程如实回 state。只有真的 running 才算启动成功 ——
+                // 把 not_linked 当成功会让界面显示"已连接"，而流量根本没被代理。
+                val obj = result.value as? JsonObject
+                val state = (obj?.get("state") as? JsonPrimitive)?.contentOrNull
+                val linked = (obj?.get("kernelLinked") as? JsonPrimitive)?.contentOrNull == "true"
+                if (state == "failed") {
+                    val err = (obj["error"] as? JsonPrimitive)?.contentOrNull
+                    SyfuseResult.Failure(
+                        SyfuseError(
+                            code = ErrorCode.ENGINE_START_FAILED,
+                            technical = "proxies.start state=failed: ${err ?: "未提供原因"}",
+                            userMessage = "内核拒绝了这份配置：${err ?: "原因未提供"}",
+                            hint = "请在「规则」页用规则体检确认配置，或换个节点再试",
+                        ),
+                    )
+                } else if (!linked) {
+                    // 内核宿主未接通：这是**如实失败**，不是"已连接"。
+                    val note = (obj?.get("note") as? JsonPrimitive)?.contentOrNull
+                    SyfuseResult.Failure(
+                        SyfuseError(
+                            code = ErrorCode.ENGINE_IPC_FAILED,
+                            technical = "proxies.start state=$state, kernelLinked=false",
+                            userMessage = "配置已就绪，但内核宿主尚未接通",
+                            hint = note ?: "内核正在装载中；完成后重试即可开始代理",
+                        ),
+                    )
+                } else {
+                    startedByUs = true
+                    SyfuseResult.Success(Unit)
+                }
             }
             is SyfuseResult.Failure -> result
         }
@@ -133,7 +159,10 @@ class UdsDataPlane @Inject constructor(
         when (
             val result = client.call(
                 "proxies.reload",
-                buildJsonObject { put("coreConfig", config.coreConfig) },
+                buildJsonObject {
+                    put("configJson", config.coreConfig)
+                    put("profileId", config.profile.id)
+                },
             )
         ) {
             is SyfuseResult.Success -> SyfuseResult.Success(Unit)
@@ -155,25 +184,60 @@ class UdsDataPlane @Inject constructor(
     /** 累计计数器。守护进程的 `traffic` 属 M9，未就绪时按接口约定返回 null。 */
     override suspend fun counters(): Pair<Long, Long>? = null
 
+    /**
+     * 选择节点。
+     *
+     * 参数里的 [group] **不发给守护进程**：当前守护进程的 `proxies.select`
+     * 只接受 `node`，且对不存在的节点会明确报错。传一个它不认识的 `group`
+     * 字段会被忽略 —— 与其制造"传了但没用到"的错觉，不如在这里去掉，
+     * 等策略组（M4 的 `ProxyGroup`）真正落到守护进程侧再一起加。
+     */
     override suspend fun select(group: String, node: String): SyfuseResult<Unit> =
         when (
             val result = client.call(
                 "proxies.select",
-                buildJsonObject {
-                    put("group", group)
-                    put("node", node)
-                },
+                buildJsonObject { put("node", node) },
             )
         ) {
             is SyfuseResult.Success -> SyfuseResult.Success(Unit)
             is SyfuseResult.Failure -> result
         }
 
+    /**
+     * 测速。
+     *
+     * 守护进程侧（T2）做的是 **TCP 可达性预检**：对每个节点的 server:port
+     * 发起一次带超时的连接，成功即报实测毫秒数；失败报 -1 + 原因。
+     *
+     * 返回值语义：`Map<节点名, 延迟毫秒>`；**值为 null 表示该节点测速失败**
+     * （守护进程给了 -1），而不是"尚未测速" —— 后者用 key 不存在表示。
+     * 这样界面能把"没测过"与"测了但连不上"分开呈现。
+     */
     override suspend fun urlTest(names: List<String>): SyfuseResult<Map<String, Int?>> {
-        // 测速需要守护进程真的能建连（M4）。当前如实返回失败，并带上真实原因。
-        val result = client.call("proxies.urlTest")
+        val result = client.call(
+            "proxies.urlTest",
+            buildJsonObject {
+                put("nodes", JsonArray(names.map { JsonPrimitive(it) }))
+            },
+        )
         return when (result) {
-            is SyfuseResult.Success -> SyfuseResult.Success(emptyMap())
+            is SyfuseResult.Success -> {
+                val obj = result.value as? JsonObject
+                val arr = obj?.get("results") as? JsonArray
+                if (arr == null) {
+                    SyfuseResult.Success(emptyMap())
+                } else {
+                    val out = LinkedHashMap<String, Int?>()
+                    for (el in arr) {
+                        val row = el as? JsonObject ?: continue
+                        val name = (row["node"] as? JsonPrimitive)?.contentOrNull ?: continue
+                        val delay = (row["delayMs"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                        // -1 是守护进程的"失败"约定，对外表示成 null。
+                        out[name] = delay?.takeIf { it >= 0 }
+                    }
+                    SyfuseResult.Success(out)
+                }
+            }
             is SyfuseResult.Failure -> result
         }
     }

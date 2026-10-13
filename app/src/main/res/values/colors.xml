@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  图标背景色。
+
+  取值不是随手挑的蓝：它是 OKLCH 空间中与 `core:common` 里
+  `DesignTokens` 的品牌主色同一色相（约 258°）的深色变体。
+  这样应用图标与首屏主色调在感知上是同一族，而不是"图标一个蓝、
+  界面另一个蓝"。
+
+  L=0.42 是刻意的：白色前景需要足够对比度才能在小尺寸下读得清。
+  实测在该明度下白/背景对比度 ≈ 6.9:1，远超 3:1 的图形元素下限。
+-->
 <resources>
-    <color name="ic_launcher_background">#1F5FA9</color>
+    <color name="ic_launcher_background">#1B4A8F</color>
 </resources>

@@ -214,8 +214,18 @@ class FrameMonitor(private val window: Int = WINDOW) {
 
     /** 是否超出玻璃预算。 */
     fun isOverBudget(): Boolean =
-        samples.size >= MIN_SAMPLES &&
+        hasEnoughSamples() &&
             (p90Ms() > GlassBudget.P90_FRAME_MS || droppedRatio() > GlassBudget.MAX_DROPPED_RATIO)
+
+    /**
+     * 样本量是否足以得出结论。
+     *
+     * 调用方**不能**只看 [isOverBudget] 的返回值来判断"这一帧没问题"：
+     * 样本不足时它同样返回 false。降档后 [reset] 会清空样本，此时必须能区分
+     * "确实没超标"与"还没测够"，否则连续超标计数会被误清零（见
+     * [GlassPerformanceController.onFrame] 的说明）。
+     */
+    fun hasEnoughSamples(): Boolean = samples.size >= MIN_SAMPLES
 
     fun reset() {
         samples.clear(); dropped = 0; total = 0
@@ -266,6 +276,15 @@ class GlassPerformanceController(initial: GlassIntensity = GlassIntensity.DEFAUL
      */
     fun onFrame(frameNanos: Long, monitor: FrameMonitor, frameBudgetNanos: Long): Boolean {
         monitor.record(frameNanos, frameBudgetNanos)
+
+        // 样本不足时**不下结论，也不清空连续超标计数**。
+        //
+        // 这里修的是一个真实缺陷：降档成功后会 monitor.reset()，于是紧接着的若干帧
+        // 样本不足；旧实现只看 isOverBudget()，而它在样本不足时也返回 false，
+        // 结果 consecutiveViolations 每轮都被清零，永远到不了 WARN_AFTER_VIOLATIONS。
+        // 也就是说 4.13 要求的"连续超标两次则提示用户"从未真正触发过。
+        if (!monitor.hasEnoughSamples()) return false
+
         if (!monitor.isOverBudget()) {
             consecutiveViolations = 0
             return false

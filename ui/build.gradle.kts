@@ -21,6 +21,15 @@ android {
         compose = true
     }
 
+    // 玻璃策略层（GlassIntensity / GlassPolicy / GlassLayerCounter / FrameMonitor /
+    // GlassPerformanceController）是**纯 Kotlin 逻辑**，不碰 Android 运行时，
+    // 因此可以在 JVM 上直接单测。用 JUnit 5（与 core:* / domain 保持一致）。
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -58,4 +67,8 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.truth)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

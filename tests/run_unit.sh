@@ -22,6 +22,11 @@ TASKS=(
 # :data 是 Android library；其单元测试任务存在但需要 SDK。有 SDK 才带上。
 if [ -n "$ANDROID_HOME" ]; then
   TASKS+=(":data:testDebugUnitTest")
+  # :ui 的玻璃策略层是纯 Kotlin 逻辑（不碰 Android 运行时），可在 JVM 上直接验证：
+  # 强度档位、白名单、层数上限、P90 超标判定、超标自动降档状态机。
+  # 注意：这里验证的是**策略逻辑**，不是"模糊是否真的生效"——后者需要真机，
+  # 由 tests/ui_glass_perf.sh 负责（无设备时 SKIP）。
+  TASKS+=(":ui:testDebugUnitTest")
 fi
 
 echo

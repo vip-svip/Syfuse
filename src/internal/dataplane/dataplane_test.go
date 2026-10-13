@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vip-svip/syfuse/src/internal/conn"
 	"github.com/vip-svip/syfuse/src/internal/outbound"
 )
 
@@ -791,5 +792,116 @@ func TestDataPlanePassesContextToDialer(t *testing.T) {
 	d.mu.Unlock()
 	if calls != 1 {
 		t.Fatalf("Proxy 拨号器被调用 %d 次, want 1", calls)
+	}
+}
+
+// TestDataPlaneTrackerRecordsConnections 盯住 Tracker 接线（M9）：
+// 拨号成功 → Open 一条记录；连接关闭 → 按每连接真实字节 Close 关账。
+// 方向口径与 conn.Record 冻结语义一致：BytesIn=客户端→上游（tx），
+// BytesOut=上游→客户端（rx）。被路由拒绝的连接**不**进 Tracker
+// （拦截数看 Stats.Blocked），这是与 counters.connections 相同的口径。
+func TestDataPlaneTrackerRecordsConnections(t *testing.T) {
+	echo := newEchoUpstream(t, "BANNER")
+	tr := conn.NewTracker(conn.TrackerOptions{})
+
+	dp, err := New(Options{
+		Listen:  "127.0.0.1:0",
+		Proxy:   &outbound.DirectDialer{},
+		Tracker: tr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	addr, err := dp.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer dp.Close()
+
+	c, rep := socks5Client(t, addr, echo.addr())
+	if rep != 0x00 {
+		t.Fatalf("应答码 = 0x%02x", rep)
+	}
+	if got := string(readWithTimeout(t, c, 6)); got != "BANNER" {
+		t.Fatalf("banner = %q", got)
+	}
+	payload := []byte("PING-PONG")
+	if _, err := c.Write(payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = readWithTimeout(t, c, len(payload))
+	c.Close()
+
+	waitFor(t, "Tracker 关账", func() bool {
+		st := tr.Stats()
+		return st.TotalConnections == 1 && st.ClosedConnections == 1
+	})
+	recs := tr.Snapshot()
+	if len(recs) != 1 {
+		t.Fatalf("Snapshot 应有 1 条，得到 %d", len(recs))
+	}
+	rec := recs[0]
+	if !rec.Closed() {
+		t.Error("记录应为已关闭")
+	}
+	if rec.DstHost == "" || rec.DstPort == 0 {
+		t.Errorf("目标信息缺失：%s:%d", rec.DstHost, rec.DstPort)
+	}
+	// 无 Router 时全部按 proxy 决策（拨号器实现与决策是两回事）。
+	if got := rec.Labels["decision"]; got != "proxy" {
+		t.Errorf("decision 标签 = %q, want proxy", got)
+	}
+	// 字节方向：客户端发出 PING-PONG（9B）→ BytesIn ≥ 9；
+	// 收到 banner+回显（15B）→ BytesOut ≥ 15。
+	if rec.BytesIn < int64(len(payload)) {
+		t.Errorf("BytesIn = %d, want >= %d（客户端→上游）", rec.BytesIn, len(payload))
+	}
+	if rec.BytesOut < 15 {
+		t.Errorf("BytesOut = %d, want >= 15（上游→客户端：banner+回显）", rec.BytesOut)
+	}
+	st := tr.Stats()
+	if st.TotalBytesIn != rec.BytesIn || st.TotalBytesOut != rec.BytesOut {
+		t.Errorf("Stats 与 Record 不一致：%+v vs %d/%d", st, rec.BytesIn, rec.BytesOut)
+	}
+}
+
+// TestDataPlaneRejectNotRecordedInTracker：被拒绝的连接不产生 Tracker 记录。
+// 记进去会让用户在连接列表里看到"建立过一条连接"，而流量实际从未出站 ——
+// 那是把拦截伪装成连接。
+func TestDataPlaneRejectNotRecordedInTracker(t *testing.T) {
+	echo := newEchoUpstream(t, "")
+	targetHost, _ := hostPort(t, echo.addr())
+	router, err := NewRuleRouter(DecisionProxy, []RouteRule{
+		{Domain: targetHost, Action: DecisionReject},
+	})
+	if err != nil {
+		t.Fatalf("NewRuleRouter: %v", err)
+	}
+	tr := conn.NewTracker(conn.TrackerOptions{})
+	dp, err := New(Options{
+		Listen:  "127.0.0.1:0",
+		Proxy:   &outbound.DirectDialer{},
+		Router:  router,
+		Tracker: tr,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	addr, err := dp.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer dp.Close()
+
+	c, _ := socks5Client(t, addr, echo.addr())
+	// 目标域名被规则拒绝：入站回 0x02。
+	_ = readWithTimeout(t, c, 0) // 清缓冲的写法无关紧要，连接必然已被拒
+	c.Close()
+
+	if got := len(tr.Snapshot()); got != 0 {
+		t.Fatalf("被拒绝的连接不得进 Tracker，得到 %d 条", got)
+	}
+	if dp.Stats().Blocked != 1 {
+		t.Errorf("Blocked = %d, want 1", dp.Stats().Blocked)
 	}
 }

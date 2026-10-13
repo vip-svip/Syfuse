@@ -10,6 +10,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/vip-svip/syfuse/src/internal/conn"
 	"github.com/vip-svip/syfuse/src/internal/ipc"
 	"github.com/vip-svip/syfuse/src/internal/netprobe"
 	"github.com/vip-svip/syfuse/src/syfuse"
@@ -516,4 +517,44 @@ func (pm *proxyManager) stateLocked() string {
 		return string(syfuse.StateStopped)
 	}
 	return pm.engine.State()
+}
+
+// ---------------------------------------------------------------------------
+// connections / traffic —— M9 数据与统计的两个数据出口
+// ---------------------------------------------------------------------------
+
+// handleConnections 实现 M9 的 connections 方法：连接列表页的数据源。
+//
+// 数据来自引擎的 conn.Tracker（dataplane 在每次拨号成功时 Open、连接关闭
+// 时按真实字节 Close —— 见 internal/dataplane 的 tracked()）。快照含
+// 活动 + 已关闭记录，按开始时间序；字段名由 conn 包冻结（黄金值测试守着）。
+//
+// 引擎尚未创建时返回空记录而不是错误：界面此时该显示"没有数据"，
+// 而不是把"还没启动引擎"渲染成一次接口故障。
+func handleConnections(pm *proxyManager) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		pm.mu.Lock()
+		defer pm.mu.Unlock()
+
+		if pm.engine == nil {
+			return map[string]any{"records": []any{}, "stats": conn.Stats{}}, nil
+		}
+		tr := pm.engine.Tracker()
+		return map[string]any{"records": tr.Snapshot(), "stats": tr.Stats()}, nil
+	}
+}
+
+// handleTraffic 实现 M9 的 traffic 方法：统计图表的数据源。
+// 与 connections 严格同源（同一个 Tracker 的聚合视图），
+// 口径不一致的"两份统计"比一份错的更难查。
+func handleTraffic(pm *proxyManager) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		pm.mu.Lock()
+		defer pm.mu.Unlock()
+
+		if pm.engine == nil {
+			return conn.Stats{}, nil
+		}
+		return pm.engine.Tracker().Stats(), nil
+	}
 }

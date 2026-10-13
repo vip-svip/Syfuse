@@ -33,6 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/vip-svip/syfuse/src/internal/conn"
 	"github.com/vip-svip/syfuse/src/internal/outbound"
 	"github.com/vip-svip/syfuse/src/internal/socks5"
 )
@@ -87,6 +88,14 @@ type Options struct {
 
 	// DialTimeout 单次拨号超时；0 用 outbound.DialTimeout。
 	DialTimeout time.Duration
+
+	// Tracker 可选的连接跟踪器（M9）。nil 时不做逐连接记账（零额外开销）。
+	//
+	// 接入语义：**拨号成功**才算一条连接（与 counters.connections 同一口径，
+	// 被路由拒绝的连接不进 Tracker —— 拦截数看 Stats.Blocked，不混在这里）。
+	// 连接关闭时按**每连接**字节记账关账；方向口径与 conn.Record 一致：
+	// BytesIn = 客户端→上游（tx），BytesOut = 上游→客户端（rx）。
+	Tracker *conn.Tracker
 
 	// Logger 可选。nil 时不记录。
 	Logger func(format string, args ...any)
@@ -285,20 +294,44 @@ func (d *DataPlane) dial(network, address string) (net.Conn, error) {
 		return nil, fmt.Errorf("%w: %s", socks5.ErrPolicyRejected,
 			net.JoinHostPort(host, portStr))
 	case DecisionDirect:
-		conn, err := d.opts.Direct.DialContext(context.Background(), network, address)
+		c, err := d.opts.Direct.DialContext(context.Background(), network, address)
 		if err != nil {
 			return nil, err
 		}
-		d.counts.connections.Add(1)
-		return d.counting(conn, &d.counts.tx, &d.counts.rx), nil
+		return d.tracked(c, decision, host, port), nil
 	default: // DecisionProxy
-		conn, err := d.opts.Proxy.DialContext(context.Background(), network, address)
+		c, err := d.opts.Proxy.DialContext(context.Background(), network, address)
 		if err != nil {
 			return nil, err
 		}
-		d.counts.connections.Add(1)
-		return d.counting(conn, &d.counts.tx, &d.counts.rx), nil
+		return d.tracked(c, decision, host, port), nil
 	}
+}
+
+// tracked 给拨号成功的连接套字节计数并登记进 Tracker（若配置了）。
+//
+// 全局计数（counts.tx/rx）与逐连接计数**同一层包装里一起做**：
+// 拆成两层包装会让 Read/Write 多一次接口转发，而这是数据面最热的路径。
+func (d *DataPlane) tracked(c net.Conn, decision Decision, host string, port int) net.Conn {
+	d.counts.connections.Add(1)
+	cc := &countingConn{Conn: c, tx: &d.counts.tx, rx: &d.counts.rx}
+	if d.opts.Tracker == nil {
+		return cc
+	}
+	// 每连接独立计数器：Close 时把真实字节数关账进 Tracker。
+	// 不用全局计数器减法推算 —— 并发连接下减法会把别人的流量算到自己头上。
+	txC, rxC := &atomic.Int64{}, &atomic.Int64{}
+	cc.txConn, cc.rxConn = txC, rxC
+	id := d.opts.Tracker.Open(conn.ConnInfo{
+		Protocol: "tcp",
+		DstHost:  host,
+		DstPort:  port,
+		Labels:   map[string]string{"decision": decision.String()},
+	})
+	cc.onClose = func(txn, rxn int64) {
+		d.opts.Tracker.Close(id, txn, rxn, "closed")
+	}
+	return cc
 }
 
 // countingConn 给连接套一层字节计数。
@@ -313,12 +346,25 @@ type countingConn struct {
 	net.Conn
 	tx *atomic.Int64
 	rx *atomic.Int64
+
+	// txConn/rxConn 是**每连接**计数器（接入 Tracker 时才非 nil）。
+	// 与全局计数同一处累加，Close 时一起关账，避免两层包装。
+	txConn *atomic.Int64
+	rxConn *atomic.Int64
+
+	// onClose 在连接真正关闭时收到每连接字节数（接 Tracker 时才非 nil）。
+	// closeOnce 保证只关一次账：并发双端关闭时第二次 Close 直接跳过。
+	onClose   func(txn, rxn int64)
+	closeOnce sync.Once
 }
 
 func (c *countingConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
 		c.rx.Add(int64(n))
+		if c.rxConn != nil {
+			c.rxConn.Add(int64(n))
+		}
 	}
 	return n, err
 }
@@ -327,8 +373,27 @@ func (c *countingConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if n > 0 {
 		c.tx.Add(int64(n))
+		if c.txConn != nil {
+			c.txConn.Add(int64(n))
+		}
 	}
 	return n, err
+}
+
+// Close 关闭底层连接并把每连接字节数关账进 Tracker。
+//
+// 关账在底层 Close **之前**：先记账再关闭，保证 Close 返回后
+// Snapshot/Stats 立即可见完整字节数（先关后账则有一个窗口期，
+// 统计接口会在连接已关闭时报出未关账的数字）。
+func (c *countingConn) Close() error {
+	var err error
+	c.closeOnce.Do(func() {
+		if c.onClose != nil && c.txConn != nil {
+			c.onClose(c.txConn.Load(), c.rxConn.Load())
+		}
+		err = c.Conn.Close()
+	})
+	return err
 }
 
 // CloseWrite 向下游发 FIN。底层不支持时返回 nil 而不是 Close：
@@ -349,6 +414,7 @@ func (c *countingConn) CloseRead() error {
 	return nil
 }
 
+// countedConnFrom 构造只带全局计数的包装（无 Tracker 路径的兼容入口）。
 func (d *DataPlane) counting(c net.Conn, tx, rx *atomic.Int64) net.Conn {
 	return &countingConn{Conn: c, tx: tx, rx: rx}
 }

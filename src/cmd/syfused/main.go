@@ -378,11 +378,14 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("proxies.select", handleProxiesSelect(pm))
 	srv.Handle("proxies.urlTest", handleProxiesURLTest(pm))
 
+	// 数据与统计（M9）：来自引擎的连接跟踪器，与 dataplane 同源。
+	srv.Handle("connections", handleConnections(pm))
+	srv.Handle("traffic", handleTraffic(pm))
+
 	// 尚未实现的方法：注册但返回明确错误。
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"connections", "M9"}, {"traffic", "M9"},
 		{"filter.stats", "M10"},
 		{"hook.status", "M11"}, {"leak.report", "M12"}, {"leak.fix", "M12"},
 		{"config.reload", "M5"},

@@ -2,12 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vip-svip/syfuse/src/internal/conn"
 )
 
 // 本文件守住 `proxies.*` 控制方法的**行为**。
@@ -388,4 +393,134 @@ func TestReadSimpleConfIgnoresUnknownKeysAndComments(t *testing.T) {
 	if _, ok := kv[""]; ok {
 		t.Error("空键不应进入结果")
 	}
+}
+
+// TestProxies_ConnectionsTraffic 端到端验证 M9 两个数据出口：
+// 真隧道里跑一条真实连接，connections 必须报出这条记录、traffic 必须报出
+// 同源统计。engine 未创建时两个方法必须返回空结果而不是错误
+// （界面该显示"没有数据"，不是接口故障）。
+func TestProxies_ConnectionsTraffic(t *testing.T) {
+	// 1) 引擎未创建：空结果，不报错。
+	pm0 := newProxyManager()
+	connResp, err := handleConnections(pm0)(nil)
+	if err != nil {
+		t.Fatalf("引擎未创建时 connections 报错: %v", err)
+	}
+	if m := connResp.(map[string]any); len(m["records"].([]any)) != 0 {
+		t.Fatalf("引擎未创建时 records 应为空，得到 %d 条", len(m["records"].([]conn.Record)))
+	}
+	if _, err := handleTraffic(pm0)(nil); err != nil {
+		t.Fatalf("引擎未创建时 traffic 报错: %v", err)
+	}
+
+	// 2) 真隧道 + 真连接。
+	// 本地 echo 上游（直连模式拨得到）。
+	up, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen 上游: %v", err)
+	}
+	defer up.Close()
+	go func() {
+		for {
+			c, e := up.Accept()
+			if e != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_, _ = io.Copy(c, c)
+			}(c)
+		}
+	}()
+
+	cfg := fmt.Sprintf(`{"schemaVersion":1,"routingMode":"direct","nodes":[],"logLevel":"info"}`)
+	p := writeConfigPack(t, cfg, "")
+	pm := newProxyManager()
+	t.Cleanup(func() { _, _ = handleProxiesStop(pm)(nil) })
+	m := mustStart(t, pm, p)
+	addr, _ := m["socksAddr"].(string)
+	if addr == "" {
+		t.Fatalf("必须报回 socksAddr")
+	}
+
+	// 最小 SOCKS5 客户端：问候 → 连接目标 → 收到成功应答。
+	c, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		t.Fatalf("连入站: %v", err)
+	}
+	defer c.Close()
+	host, portStr, _ := net.SplitHostPort(up.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	if _, err := c.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatalf("问候写出: %v", err)
+	}
+	hello := make([]byte, 2)
+	if _, err := io.ReadFull(c, hello); err != nil || hello[0] != 5 || hello[1] != 0 {
+		t.Fatalf("问候应答异常: %v %v", hello, err)
+	}
+	req := []byte{5, 1, 0, 3, byte(len(host))}
+	req = append(req, host...)
+	req = append(req, byte(port>>8), byte(port&0xff))
+	if _, err := c.Write(req); err != nil {
+		t.Fatalf("连接请求写出: %v", err)
+	}
+	rep := make([]byte, 10)
+	if _, err := io.ReadFull(c, rep); err != nil || rep[1] != 0 {
+		t.Fatalf("连接应答异常: %v %v", rep, err)
+	}
+	// 真的发几个字节再关，让记录里有非零字节数。
+	if _, err := c.Write([]byte("hi")); err != nil {
+		t.Fatalf("业务写出: %v", err)
+	}
+	buf := make([]byte, 2)
+	_, _ = io.ReadFull(c, buf)
+	c.Close()
+
+	// 3) connections 必须报出这条真实记录。
+	waitForCond(t, "connections 记账", func() bool {
+		resp, err := handleConnections(pm)(nil)
+		if err != nil {
+			return false
+		}
+		st := resp.(map[string]any)["stats"].(conn.Stats)
+		return st.ClosedConnections == 1
+	})
+	resp, err := handleConnections(pm)(nil)
+	if err != nil {
+		t.Fatalf("connections: %v", err)
+	}
+	recs := resp.(map[string]any)["records"].([]conn.Record)
+	if len(recs) != 1 {
+		t.Fatalf("应记 1 条连接，得到 %d", len(recs))
+	}
+	rec := recs[0]
+	if rec.DstHost != host || rec.DstPort != port {
+		t.Errorf("记录目标 = %s:%d, want %s:%d", rec.DstHost, rec.DstPort, host, port)
+	}
+	if rec.BytesIn < 2 {
+		t.Errorf("BytesIn = %d, want >= 2", rec.BytesIn)
+	}
+
+	// 4) traffic 与 connections 同源。
+	traffic, err := handleTraffic(pm)(nil)
+	if err != nil {
+		t.Fatalf("traffic: %v", err)
+	}
+	st := traffic.(conn.Stats)
+	if st.TotalConnections != 1 || st.TotalBytesIn != rec.BytesIn {
+		t.Errorf("traffic 与 connections 不同源：%+v vs %+v", st, rec)
+	}
+}
+
+// waitForCond 与 dataplane 的 waitFor 同构：轮询等待异步关账可见。
+func waitForCond(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("等待 %s 超时", what)
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vip-svip/syfuse/src/internal/conn"
 	"github.com/vip-svip/syfuse/src/internal/dataplane"
 )
 
@@ -37,7 +38,16 @@ type Engine struct {
 	// 由 [Engine.SelectNode] 设置；运行中切换需要重启隧道，
 	// 因此这里只记意图，实际生效点在 Start/Reload。
 	selectedNode string
+
+	// tracker 是连接跟踪器（M9）：connections/traffic 两个 UDS 方法的
+	// 数据源。每个 Engine 一份、NewEngine 即创建 —— 即使从未 Start，
+	// 接口也返回稳定的空记录而不是 nil（调用方无需判空）。
+	tracker *conn.Tracker
 }
+
+// Tracker 返回本引擎的连接跟踪器。生命周期与 Engine 相同：
+// 跨 Start/Stop 保留记录，重新 NewEngine 才清零。
+func (e *Engine) Tracker() *conn.Tracker { return e.tracker }
 
 // State 是引擎状态。取值与 Kotlin 侧 EngineState 一一对应。
 type State string
@@ -69,7 +79,7 @@ type Stats struct {
 // StateNotLinked 常量本身保留（Kotlin 侧 EngineState 枚举与历史配置里
 // 还有它），只是不再由本函数产生。
 func NewEngine() *Engine {
-	return &Engine{state: StateStopped}
+	return &Engine{state: StateStopped, tracker: conn.NewTracker(conn.TrackerOptions{})}
 }
 
 // Version 返回内核版本字符串。
@@ -121,6 +131,9 @@ func (e *Engine) Start(configJSON string) error {
 		e.state = StateFailed
 		return err
 	}
+	// 连接跟踪（M9）：每个 Engine 一份，跨 Start/Stop 保留记录
+	// —— connections 接口报的是"本守护进程见过的连接"，不是"本次启动的"。
+	opts.Tracker = e.tracker
 	tun, err := dataplane.New(opts)
 	if err != nil {
 		e.state = StateFailed

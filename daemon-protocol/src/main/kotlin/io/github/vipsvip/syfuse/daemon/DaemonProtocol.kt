@@ -62,6 +62,9 @@ object DaemonProtocol {
         "proxies", "proxies.status",
         "proxies.start", "proxies.stop",
         "proxies.reload", "proxies.select", "proxies.urlTest",
+        // 数据与统计（M9）：连接跟踪器（conn.Tracker）经 dataplane
+        // 记录每条真实连接，connections 报快照、traffic 报聚合 —— 两者同源。
+        "connections", "traffic",
     )
 
     /**
@@ -75,8 +78,6 @@ object DaemonProtocol {
      * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
     val PENDING_METHODS: Map<String, String> = mapOf(
-        "connections" to "M9",
-        "traffic" to "M9",
         "filter.stats" to "M10",
         "hook.status" to "M11",
         "leak.report" to "M12",

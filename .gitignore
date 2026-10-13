@@ -85,3 +85,4 @@ tests/_artifacts/
 /.ev_*.txt
 /.probe/
 /.tmp_*
+src/syfused.exe

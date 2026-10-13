@@ -35,7 +35,10 @@ tasks.test {
     // 把基准开关从命令行转发进测试 JVM。
     // 注意：Gradle 的 `-D` 只作用于 Gradle 自身，不会自动进 fork 出的测试进程；
     // 必须显式转发，否则 `-Dsyfuse.runPerf=true` 会被静默忽略——那会让人误以为"跑过基准了"。
-    listOf("syfuse.runPerf", "syfuse.perfRuleCount").forEach { key ->
+    listOf(
+        "syfuse.runPerf", "syfuse.perfRuleCount", "syfuse.perfRounds",
+        "syfuse.perfWarmupRounds", "syfuse.perfSamples",
+    ).forEach { key ->
         (project.findProperty(key)?.toString() ?: System.getProperty(key))?.let {
             systemProperty(key, it)
         }

@@ -67,6 +67,9 @@ object DaemonProtocol {
         "connections", "traffic",
         // 防泄漏（M12）：leak.check 一键自检，报告来自 internal/leak。
         "leak.check",
+        // 模块管理（M7a）：存储层在 internal/module，冲突检测随 merge 返回。
+        "modules.list", "modules.import", "modules.delete",
+        "modules.toggle", "modules.order", "modules.merge",
     )
 
     /**

@@ -385,6 +385,14 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 防泄漏（M12）：一键自检。
 	srv.Handle("leak.check", handleLeakCheck())
 
+	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
+	srv.Handle("modules.list", handleModulesList(paths))
+	srv.Handle("modules.import", handleModulesImport(paths))
+	srv.Handle("modules.delete", handleModulesDelete(paths))
+	srv.Handle("modules.toggle", handleModulesToggle(paths))
+	srv.Handle("modules.order", handleModulesOrder(paths))
+	srv.Handle("modules.merge", handleModulesMerge(paths))
+
 	// 尚未实现的方法：注册但返回明确错误。
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。

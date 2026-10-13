@@ -116,9 +116,20 @@ LAST_UPDATED: 2026-10-13T05:10Z (2026-10-13 13:10 +0800)
    而是把新量到的第⑥组 54 s 拆成独立单元 **T7**（有度量、有明确修法、有等价性矩阵作为前置），
    下一轮与 T4/T6 并行做。
 
-7. **同步更新的文档**：`README.md`（门禁 6 组 → 7 组、勘误登记区、任务拆分与耗时基线两节，
+7. **提交后才抓到一个隐形缺陷**：`git commit` 打出
+   `warning: LF will be replaced by CRLF`（针对 `.ps1`）。根因是 `.gitattributes` 里
+   `*.ps1 text eol=crlf` —— 入库 blob 是 LF（所以 `git diff` 干净、本机跑绿），
+   但**每次 checkout 都写出 CRLF**。后果是：本机绿、任何人 clone / CI checkout 之后
+   刚建立的逐字节断言必红，而门禁第⑥组**不会报**（它只查 `.ps1` 的 BOM，不查行尾）。
+   已改为 `*.ps1 text eol=lf`，并用「删掉工作副本 → `git checkout` → 量字节」实测确认
+   （8187 / 12300 字节，CR=0）。教训记在 `docs/EVIDENCE.md` §14.10：
+   **逐字节类断言不能用"自己写出来的工作副本"当验证环境。**
+
+8. **同步更新的文档**：`README.md`（门禁 6 组 → 7 组、勘误登记区、任务拆分与耗时基线两节，
    并把两处过时措辞对齐到提示词当前写法）、`docs/EVIDENCE.md`（§0 汇总重采、
-   §2 标注为过期并指向 §14.6、**§14 整体重写**）、`CHANGELOG.md`、`.github/workflows/ci.yml`。
+   §2 标注为过期并指向 §14.6、§3 说明 WARN 25→32 全是自引用、**§14 整体重写**含 §14.10）、
+   `CHANGELOG.md`、`PENDING-EXTERNAL.md`（新增 gomobile + NDK 一节）、`.gitattributes`、
+   `.github/workflows/ci.yml`。
 
 ---
 

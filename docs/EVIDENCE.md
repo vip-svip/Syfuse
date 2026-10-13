@@ -1353,6 +1353,7 @@ App 仍是最小骨架，未接入代理内核、DNS、MITM、过滤等能力，
 | 重同步 | 已按附录逐字节落盘，`cmp` 复核三份全部 IDENTICAL |
 | 重同步后门禁 | `.sh` **EXIT=0**、`.ps1` **EXIT=0**，两版均为「需求项 38 条，缺失 0 条」、各 101 条 PASS |
 | 附录自身缺陷 | 发现并修掉 4 处（E1–E4），其中 **E1 让第 ⑥ 组长期是死检查** |
+| 本仓库自身缺陷 | 发现并修掉 1 处（见 14.10）：`.gitattributes` 把 `.ps1` 定成 `eol=crlf`，会让逐字节断言在 clone 之后必红 |
 | 补偿控制 | 新增 `tests/run_appendix_sync.sh`（第 ⑦ 组在本仓库失效，见 14.7） |
 
 ### 14.2 比对方法（可复现，不用编辑器）
@@ -1771,3 +1772,56 @@ E1 修好后第 ⑥ 组**真的跑起来了**，代价是门禁从 10 s 涨到 3
 | 「`.ps1` 缺 `Get-HeadBytes`，在 PowerShell 7 上会崩」 | 成立，但要注意它**在本机测不出来**（本机是 5.1）。这一条已写进 14.3 的说明，避免被当成"已验证" |
 | 「第 ⑤ 组看不到 37/38 两条需求」 | 成立。重同步后 38/38 全绿，且 22/33 两条**没有放宽关键词** —— 是把 README 的措辞对齐到提示词当前写法（`透明玻璃实现规范`、`完整界面方案（皮肤）`），并补写了 37/38 两节的**实质内容**（含耗时基线表），不是塞关键词 |
 | 「先停手等用户决定」 | 用户已选择「重同步 + 提勘误修 `$PRUNE`」+「先提交 M3 改动集」，本轮按此执行完毕 |
+
+### 14.10 提交后才暴露的缺陷：`.gitattributes` 把 `.ps1` 定成了 CRLF
+
+**发现方式**：`git commit` 打出警告
+`warning: in the working copy of 'tools/run_agent.ps1', LF will be replaced by CRLF`。
+这条警告很容易被忽略（它只是 warning，提交照样成功），但它意味着**刚建立的逐字节断言
+在别人机器上必然失败**。
+
+**根因**：仓库的 `.gitattributes` 里有 `*.ps1 text eol=crlf`，且 `core.autocrlf=true`。
+
+| 位置 | `run_agent.ps1` | `verify_deliverable.ps1` |
+|---|---|---|
+| 入库 blob（`git show HEAD:<file>`） | 8187 B，CR=0 | 12300 B，CR=0 |
+| **checkout 到工作副本**（修之前） | **8370 B，CR=183** | **12525 B，CR=225** |
+| 附录交付的字节 | 8187 B，CR=0 | 12238 B，CR=0 |
+
+也就是说：`text` 属性把**仓库侧**归一成 LF（所以 blob 是对的、`git diff` 干净），
+但 `eol=crlf` 让**每次 checkout 都写出 CRLF**。于是：
+
+- 本机（直接用 `cp` 写的 LF）→ 绿；
+- 任何人 `git clone` / CI checkout 之后 → `tests/run_appendix_sync.sh` 的
+  「`run_agent.ps1` 必须与附录逐字节相同」直接红；而门禁第⑥组**不会报**
+  （它只查 `.ps1` 的 BOM，不查行尾）。这正是一个"检查项缺失 + 环境差异"叠加出来的隐形故障。
+
+**为什么改成 LF 而不是放宽断言**：门禁第⑦组的原话就是
+「附录与 tools/ 三个脚本一致（**base64 逐字节**）」—— **逐字节一致是规格自己要求的**，
+不是本项目加的严格度。放宽成"归一化行尾后再比较"等于自行降低规格。
+而且附录 A/C 交付的 `.ps1` 字节本来就是 LF，PS 5.1 与 PS 7 都能执行 LF 的 `.ps1`，改掉零代价。
+
+**修法**：`*.ps1 text eol=crlf` → `*.ps1 text eol=lf`，并在 `.gitattributes` 里写清三条理由。
+
+**验证**（不做这一步就等于没修）：
+
+```text
+$ rm -f tools/run_agent.ps1 tools/verify_deliverable.ps1
+$ git checkout -- tools/run_agent.ps1 tools/verify_deliverable.ps1
+$ for f in tools/run_agent.ps1 tools/verify_deliverable.ps1; do
+    printf '%-30s bytes=%s CR=%s head3=%s\n' "$f" "$(wc -c < $f)" "$(tr -cd '\r' < $f | wc -c)" "$(head -c 3 $f | od -An -tx1 | tr -d ' \n')"
+  done
+tools/run_agent.ps1            bytes=8187 CR=0 head3=efbbbf
+tools/verify_deliverable.ps1   bytes=12300 CR=0 head3=efbbbf
+
+$ bash tests/run_appendix_sync.sh   # → PASS=8 FAIL=0，EXIT=0
+$ bash tools/verify_deliverable.sh README.md 300
+  [PASS] run_agent.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  [PASS] verify_deliverable.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+  ...
+  全部通过（WARN 2 项）
+```
+
+**教训（写进本节是为了下次不再踩）**：凡是"逐字节一致"类断言，都必须用
+**"删掉工作副本 → 重新 checkout → 量字节"** 来验证，不能只在当前工作副本上跑绿就收工 ——
+当前工作副本是自己写出来的，它天然符合自己的期望，因此**它不能作为该类断言的验证环境**。

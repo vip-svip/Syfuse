@@ -125,8 +125,12 @@ dependencies {
 }
 ```
 
-并新增一个 `DataPlane` 实现替换 `NotLinkedDataPlane`。
+并新增一个 `DataPlane` 实现（或替换现有的 `UdsDataPlane`）。
 **替换点只有 `EngineModule` 一处** —— UI 与规则引擎不需要任何改动（这是 9.2 的设计目标）。
+
+当前绑定的是 `UdsDataPlane`：控制通道是真的（走 UDS 连 `syfused`），
+但 `proxies.start` 尚未实现，所以它会**如实失败**并把守护进程给的原因带上来。
+内核接入后只需换掉 `EngineModule.provideDataPlane` 的返回实现即可。
 
 ---
 

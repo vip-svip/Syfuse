@@ -87,7 +87,30 @@ class CorpusConsistencyTest {
         }
 
         println("[CorpusConsistency] 通过 $checked 条期望；引擎规则数=${engine.ruleCount}，" +
-            "索引化=${engine.indexedRuleCount}，线性=${engine.linearRuleCount}")
+            "索引化=${engine.indexedRuleCount}，线性=${engine.linearRuleCount}；" +
+            "总行数=${report.totalLines}，忽略行数=${report.ignoredLines}，" +
+            "元素规则=${report.cosmeticRules.size}，ERROR=${report.errors.size}，WARNING=${report.warnings.size}")
+    }
+
+    /**
+     * 语料解析计数与 Go 侧逐项对齐。
+     *
+     * 这些常量是**两侧共同的金标准**：Go 侧
+     * `syfuse/rule/corpus_test.go` 的 `TestCorpus_NoRuleSilentlyDropped`
+     * 断言同一组值。任何一侧的解析行为漂移，这里或那里就会红。
+     *
+     * 之所以要单独立一条：上面那条"逐条期望"只覆盖被查询的域名，
+     * 若某个规则被静默丢弃、且没有任何期望行命中它，逐条断言仍然全绿。
+     */
+    @Test
+    fun `语料解析计数与 Go 侧一致`() {
+        val report = loadReport()
+        assertWithMessage("网络规则数").that(report.networkRules).hasSize(29)
+        assertWithMessage("元素规则数").that(report.cosmeticRules).hasSize(6)
+        assertWithMessage("忽略行数").that(report.ignoredLines).isEqualTo(35)
+        assertWithMessage("总行数").that(report.totalLines).isEqualTo(71)
+        assertWithMessage("ERROR 数").that(report.errors).hasSize(1)
+        assertWithMessage("WARNING 数").that(report.warnings).hasSize(1)
     }
 
     @Test

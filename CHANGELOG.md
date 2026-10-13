@@ -10,6 +10,49 @@
 
 ## [未发布]
 
+### 新增（M3 内核打通 —— 规则引擎移植与真实控制通道）
+
+- **规则语义移植到 Go**（`src/syfuse/rule/`）。`core:rule`（Kotlin）与 `src/syfuse/rule`（Go）
+  现在消费**同一份** `tests/corpus/*.txt` + `tests/expect.tsv` —— 不是"两边各写各的测试"，
+  而是同一份期望表被两个独立实现各跑一遍。语义漂移无处可藏。
+- **`rules.test` / `rules.syntax` / `rules.stats` / `rules.build` 四个控制方法真实现**，
+  不再是返回"未实现（M5/M10）"的占位处理器。CLI 同步接上
+  （`syfused rules stats|test|syntax|build|verify`）。
+- **`UdsDataPlane` 替换 `NotLinkedDataPlane`**：界面走真实 UDS 控制通道。
+  通道是通的，但 `proxies.start` 尚未实现 —— 于是它把守护进程回的
+  "尚未实现（计划里程碑 M3）"**原样带上来**，**绝不**让界面显示"已连接"。
+- **新增纯 JVM 模块 `daemon-protocol`**（协议模型 + 客户端 + 传输接口）。
+  拆出来的理由是实测倒逼的：Android library 的单元测试对着 `android.jar` 编译，
+  而 `android.jar` 里**没有** `java.net.UnixDomainSocketAddress`（实测 android-35），
+  于是"App → UDS → 守护进程"这条往返在沙箱里**连编译都过不去**。
+  拆开后用本机真实编译出的 `syfused` 进程跑通 **13 条真实往返**
+  （`DaemonWireRoundTripTest`）。真机专属的 `android.net.LocalSocket` 实现留在 `:daemon`。
+- **`EngineController` 增加可用性探测**：缓存为"不可用"时先探测一次再判定，
+  避免"模块刚装好但引擎状态还是旧的"这种要重启 App 才能恢复的状态。
+
+### 修复（M3 轮）
+
+- **`PatternCompiler` 的结尾锚点写错**：`wildcardBody` 输出 `"\\$"`（正则字面美元符），
+  导致 `|https://x/y|` 这一整族规则**永远不可能命中**。两侧同步改为 `'$'`。
+- **含 `##` 的 `#` 注释行被误判为元素隐藏规则**（语料第 70 行），
+  元素规则数虚报为 7（实际 6）。两侧同步加"行首必须是元素标记"的前置判定。
+- **行数统计与 `wc -l` 不一致**：Kotlin `lineSequence()` 会为"以 `\n` 结尾的文件"
+  多留一个空段（71 行语料 → 72）。以 `wc -l` 为基准，两侧统一为"恰好去掉一个尾部空段"。
+- **测试用的 JVM AF_UNIX 传输从未重新注册兴趣集**：只注册了 `OP_CONNECT`，
+  之后 select 永远不会报"可写"，首次 write 一路等到 deadline，报出"写入 超时" ——
+  一个看起来像"守护进程没应答"、实际是"我根本没在等写"的假象。
+- **`tests/run_unit.sh` 的两处统计缺陷**：① 汇总 glob 只匹配 `root/*/build/test-results`，
+  漏掉 `core/rule`、`core/common`（在 `core/` 下一层）—— "失败=0"是绿的但没统计到它们；
+  ② `:daemon` 契约测试迁移后**残留的旧 XML** 仍被计入，模块数虚报 6、用例数虚报 140
+  （实际 5 / 126）。现在跑之前先清理旧报告，并打印模块清单；跳过项也**点名**而不是只报数量。
+- **Kotlin 用例名含双引号会让 Windows 上的编译直接失败**：编译器用反引号里的名字生成
+  `.class` 文件名，而 Windows 文件名不允许 `" * ? < > | :`，抛出的却是
+  `InvalidPathException: Illegal char <">` 这种完全看不出与"命名"有关的内部错误。
+  Linux/macOS 上正常，只在 Windows 上炸。已加门禁断言防复发。
+- **`tests/run_module_checks.sh` 的 R2 段改为两条断言**：绑定必须是 `UdsDataPlane`，
+  且 `proxies.start` 必须仍在待实现表里。只看前者会漏掉"绑定了一个假装能起隧道的实现"，
+  只看后者会漏掉"界面根本没接上通道"。
+
 ### 修复（交付链路与身份一致性）
 
 这一轮没有加新功能，全部是"让已有的东西真的成立"。

@@ -52,6 +52,12 @@ include(":engine")
 
 // ---- 守护进程通信（UDS + 协议客户端） ----
 include(":daemon")
+// 纯 JVM：协议模型 + 客户端 + 传输接口。
+// 必须与 :daemon 分开，理由见 daemon-protocol/build.gradle.kts 顶部
+// （Android library 的单测对着 android.jar 编译，而 android.jar 没有
+// java.net.UnixDomainSocketAddress，导致"App → UDS → 守护进程"往返在沙箱里
+// 连编译都过不去）。拆出来之后，那条往返可以对着真正的 JDK 跑真实进程。
+include(":daemon-protocol")
 
 // ---- 特权与 Hook ----
 include(":privileged")

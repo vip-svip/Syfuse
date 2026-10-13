@@ -1,26 +1,25 @@
 package io.github.vipsvip.syfuse.daemon
 
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import io.github.vipsvip.syfuse.core.common.ErrorCode
 import io.github.vipsvip.syfuse.core.common.SyfuseError
 import io.github.vipsvip.syfuse.core.common.SyfuseResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
-import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.nio.charset.StandardCharsets
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 守护进程客户端。
  *
- * 传输用 [LocalSocket]（Android 自 API 1 起的原生 Unix 域套接字封装），
- * **不是** java.nio 的 UnixDomainSocketAddress —— 后者要 API 29+，
- * 而本项目 minSdk 是 26。用 LocalSocket 才能在 26..28 上工作。
+ * 传输交给 [DaemonTransport]。**刻意不给默认值** —— 默认值只能取
+ * `android.net.LocalSocket` 那个真机实现，而它住在 `:daemon`（Android library）里，
+ * 本模块是纯 JVM，引用不到它。这个"引用不到"是**好事**：
+ * 它从类型系统上保证了本模块（连同它的单测）永远不碰 Android 框架类，
+ * 于是"协议逻辑 + 真实守护进程"这条往返可以在**无设备**的沙箱里被真实跑通
+ * （见 `src/test/.../DaemonWireRoundTripTest.kt`）。
+ * 真机装配点在 `:engine` 的 `EngineModule`，那里显式传入 `LocalSocketTransport()`。
  *
  * 协议是"一行一个 JSON"（见 [DaemonProtocol]），因此实现上就是
  * 写一行、读一行，不需要处理粘包/半包之外的复杂情况。
@@ -34,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong
 class DaemonClient(
     private val dataDir: String = DaemonProtocol.DATA_DIR,
     private val tokenProvider: () -> String?,
+    private val transport: DaemonTransport,
 ) {
     private val seq = AtomicLong(0)
 
@@ -68,30 +68,22 @@ class DaemonClient(
             )
 
             try {
-                LocalSocket().use { socket ->
-                    socket.connect(LocalSocketAddress(socketPath, LocalSocketAddress.Namespace.FILESYSTEM))
-                    socket.soTimeout = DaemonProtocol.TIMEOUT_MS.toInt()
-
-                    BufferedWriter(OutputStreamWriter(socket.outputStream, StandardCharsets.UTF_8)).use { w ->
-                        w.write(DaemonProtocol.json.encodeToString(DaemonRequest.serializer(), request))
-                        w.write("\n")
-                        w.flush()
-
-                        val line = BufferedReader(
-                            InputStreamReader(socket.inputStream, StandardCharsets.UTF_8),
-                        ).readLine()
-                            ?: return@withContext SyfuseResult.Failure(
-                                SyfuseError(
-                                    code = ErrorCode.ENGINE_IPC_FAILED,
-                                    technical = "empty_response",
-                                    userMessage = "守护进程没有返回内容",
-                                    hint = "进程可能已退出。可在模块的 action.sh 第 3 项查看状态",
-                                ),
-                            )
-
-                        decode(line)
-                    }
+                val line = transport.exchange(
+                    socketPath,
+                    DaemonProtocol.json.encodeToString(DaemonRequest.serializer(), request),
+                    DaemonProtocol.TIMEOUT_MS.toInt(),
+                )
+                if (line == null) {
+                    return@withContext SyfuseResult.Failure(
+                        SyfuseError(
+                            code = ErrorCode.ENGINE_IPC_FAILED,
+                            technical = "empty_response",
+                            userMessage = "守护进程没有返回内容",
+                            hint = "进程可能已退出。可在模块的 action.sh 第 3 项查看状态",
+                        ),
+                    )
                 }
+                decode(line)
             } catch (t: Throwable) {
                 // 连不上是**最常见**的情形（模块未安装 / 守护未启动），
                 // 必须给出可操作的提示，而不是把 SocketException 原文抛给用户。
@@ -162,6 +154,38 @@ class DaemonClient(
     /** 便捷方法：读取最近日志。 */
     suspend fun tailLog(lines: Int = 100): SyfuseResult<JsonElement> =
         call("log.tail", DaemonProtocol.json.parseToJsonElement("""{"lines":$lines}"""))
+
+    /** 便捷方法：规则集统计（真实编译一次后报数）。 */
+    suspend fun rulesStats(): SyfuseResult<JsonElement> = call("rules.stats")
+
+    /** 便捷方法：规则体检（带行号的逐条诊断）。 */
+    suspend fun rulesSyntax(): SyfuseResult<JsonElement> = call("rules.syntax")
+
+    /**
+     * 便捷方法：对单个请求跑一次匹配。
+     *
+     * 与"规则测试"界面一一对应：传入 host 或 url，拿回决策、优先级与
+     * 完整候选链路（哪条规则命中、哪条被跳过、为什么）。
+     *
+     * @param collectChain 为 true 时守护进程会返回完整链路；界面展示需要它，
+     *   高频调用不需要（链路对象是纯展示用的额外分配）。
+     */
+    suspend fun rulesTest(
+        host: String? = null,
+        url: String? = null,
+        resourceType: String? = null,
+        documentHost: String? = null,
+        collectChain: Boolean = false,
+    ): SyfuseResult<JsonElement> = call(
+        "rules.test",
+        buildJsonObject {
+            if (host != null) put("host", host)
+            if (url != null) put("url", url)
+            if (resourceType != null) put("resourceType", resourceType)
+            if (documentHost != null) put("documentHost", documentHost)
+            put("collectChain", collectChain)
+        },
+    )
 }
 
 /**

@@ -23,7 +23,7 @@ head2() { printf '\n== %s ==\n' "$1"; }
 
 cd "$SYFUSE_ROOT"
 
-SRC_DIRS="app/src ui/src core domain data engine daemon privileged hook"
+SRC_DIRS="app/src ui/src core domain data engine daemon daemon-protocol privileged hook"
 
 # 在源码里检索，但**剔除纯注释行**。
 # 没有这一步会误报：注释里解释"本模块不引用 WebView"也会被 grep 命中。
@@ -84,20 +84,84 @@ elif [ "$kernel_declared" = "1" ]; then
     pend "接入点已声明，但 kernel/out 为空 —— 内核尚未构建"
   fi
 else
-  pend "内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 NotLinkedDataPlane，不得对外声称代理可用"
+  pend "内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 UdsDataPlane（走 UDS 连真实守护进程），但 proxies.start 仍未实现，不得对外声称代理可用"
 fi
 
-# 内核未接入时，绑定必须确实是 NotLinked —— 防止"嘴上说没接入，代码里却声称已连接"
-if grep -q "NotLinkedDataPlane" engine/src/main/kotlin/io/github/vipsvip/syfuse/engine/EngineModule.kt 2>/dev/null; then
-  pass "EngineModule 绑定 NotLinkedDataPlane，与内核未接入状态一致"
+# 内核未接入时，绑定必须**如实**。判据有两条，缺一不可：
+#   1. EngineModule 绑定的是走真实通道的 UdsDataPlane（而不是空壳占位）；
+#   2. proxies.start 仍被登记为待实现方法（守护进程会如实回"尚未实现（计划里程碑 M3）"）。
+# 只看 1 会漏掉"绑定了一个假装能起隧道的实现"；
+# 只看 2 会漏掉"界面根本没接上通道，只是恰好也没谎报"。
+if grep -q "UdsDataPlane" engine/src/main/kotlin/io/github/vipsvip/syfuse/engine/EngineModule.kt 2>/dev/null; then
+  pass "EngineModule 绑定 UdsDataPlane（走 UDS 连真实守护进程）"
 else
-  note "EngineModule 未绑定 NotLinkedDataPlane；若内核已接入请忽略本条"
+  fail "EngineModule 未绑定 UdsDataPlane —— 界面拿不到真实控制通道"
+fi
+if grep -q '"proxies.start" to "M3"' daemon-protocol/src/main/kotlin/io/github/vipsvip/syfuse/daemon/DaemonProtocol.kt 2>/dev/null; then
+  pass "proxies.start 仍登记为待实现（M3），隧道不会被谎报为已连接"
+else
+  fail "proxies.start 不在待实现表里 —— 若隧道已真正实现，请同步更新本检查；否则存在谎报已连接的风险"
 fi
 
 if src_grep 'https?://[^"]*(umeng|bugly|crashlytics|sentry|firebase|appsflyer|adjust\.com)' $SRC_DIRS | grep -q .; then
   fail "源码中出现遥测/归因域名常量"
 else
   pass "源码中无遥测/归因域名常量"
+fi
+
+# ---------------------------------------------------------------------------
+head2 "R2b 协议层与 Android 传输分离（沙箱可验证的物理前提）"
+# 为什么单独查这一条：这是"往返能在无设备时被验证"的**物理前提**。
+# 若协议层住回 Android library，它的单测就会对着 android.jar 编译，
+# 而 android.jar 里没有 java.net.UnixDomainSocketAddress
+# （实测 android-35：无此类；android/net/LocalSocket.class 有），
+# 于是"App → UDS → 守护进程"这条往返连**编译**都过不去，只能等真机。
+[ -f daemon-protocol/build.gradle.kts ] && pass "daemon-protocol 模块存在" || fail "daemon-protocol 模块缺失（往返测试将无法在沙箱里编译）"
+if grep -q 'alias(libs.plugins.kotlin.jvm)' daemon-protocol/build.gradle.kts 2>/dev/null; then
+  pass "daemon-protocol 使用 kotlin.jvm（纯 JVM，未引入 Android 插件）"
+else
+  fail "daemon-protocol 不是纯 JVM 模块 —— 往返测试会退化成「编译不过」"
+fi
+if grep -q 'include(":daemon-protocol")' settings.gradle.kts 2>/dev/null; then
+  pass "settings.gradle.kts 已包含 :daemon-protocol"
+else
+  fail "settings.gradle.kts 未包含 :daemon-protocol"
+fi
+# 协议层源码**不得**出现 Android 框架类：一旦出现，纯 JVM 编译立刻红。
+# 注意这里必须用 src_grep（剔除注释行）—— KDoc 里解释"为什么不能用
+# android.net.LocalSocket"是完全正常的，直接 grep 会把它误报成依赖。
+proto_android=$(src_grep '^import android\.' daemon-protocol/src 2>/dev/null)
+if [ -z "$proto_android" ]; then
+  pass "daemon-protocol 源码无 android.* 依赖（注释除外）"
+else
+  fail "daemon-protocol 出现 Android 依赖（会破坏纯 JVM 可测性）："; echo "$proto_android" | sed 's/^/    /'
+fi
+# JDK-only 的 AF_UNIX 实现必须**只**存在于 test 源集：
+# 打进主产物会在低版本 Android 上直接 NoClassDefFoundError。
+# 判据取 `import` 行而不是全文匹配 —— 文件头 KDoc 里必然要提到这个类名
+# （解释为什么它只能待在 test 源集），全文匹配会把说明文字误判成用法。
+if grep -rn 'import java\.net\.UnixDomainSocketAddress' daemon-protocol/src/main 2>/dev/null | grep -q .; then
+  fail "JDK-only 的 UnixDomainSocketAddress 被主源码集 import（会被打进 APK）"
+else
+  pass "JDK-only 的 UnixDomainSocketAddress 未进主产物（仅 test 源集使用）"
+fi
+# 真机实现必须留在 Android 模块里（否则纯 JVM 模块编译不过）。
+[ -f daemon/src/main/kotlin/io/github/vipsvip/syfuse/daemon/LocalSocketTransport.kt ] \
+  && pass "真机传输 LocalSocketTransport 位于 :daemon（Android library）" \
+  || fail "真机传输 LocalSocketTransport 不在 :daemon 里"
+
+# ---------------------------------------------------------------------------
+head2 "测试用例名不得含 Windows 非法文件名字符"
+# Kotlin 用反引号里的名字生成 .class 文件名。Windows 文件名不允许 " * ? < > | :，
+# 一旦出现，编译器会抛 `InvalidPathException: Illegal char <">` ——
+# 一个完全看不出与"命名"有关的内部编译器错误（实测踩过，排查花了不少时间）。
+# Linux/macOS 上则完全正常，于是它只在 Windows 上炸：典型的平台相关坑。
+bad_names=$(grep -rn 'fun `[^`]*["*?<>|:][^`]*`' --include=*.kt \
+  app ui core domain data engine daemon daemon-protocol privileged hook 2>/dev/null || true)
+if [ -z "$bad_names" ]; then
+  pass "全部 Kotlin 用例名不含 Windows 非法文件名字符"
+else
+  fail "以下用例名会让 Windows 上的编译直接失败："; echo "$bad_names" | sed 's/^/    /'
 fi
 
 # ---------------------------------------------------------------------------

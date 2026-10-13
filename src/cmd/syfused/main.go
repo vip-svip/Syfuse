@@ -170,11 +170,14 @@ func usage() {
   token [--rotate]      显示当前访问令牌 / 重新生成
   restore [--apply]     按还原清单执行还原（默认 --dry-run 只打印计划）
 
-规则引擎（与 App 共用同一实现）
+规则引擎（与 App 共用同一实现，语义由 tests/corpus 两侧共同守住）
   rules paths           打印规则相关路径
-  rules stats           打印规则与清单统计
-  rules build|syntax|verify|test|testfile|clear
-                        规则编译/体检/测试 —— 见各自输出
+  rules stats           打印规则集与还原清单统计
+  rules build           编译规则集并报告（内存内编译；产物落盘属 M5）
+  rules syntax          规则体检：逐行诊断
+  rules verify          同 syntax，但存在 ERROR 时退出码为 1
+  rules test <host|url> [资源类型]
+                        对单个请求跑一次匹配，打印完整候选链路
 
 其它
   version               版本信息
@@ -182,6 +185,7 @@ func usage() {
 
 尚未实现（会明确报错，不会静默成功）
   fetch  ca  proxy  hook  leak
+  rules testfile  rules clear
 `)
 }
 
@@ -353,14 +357,25 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 		return map[string]any{"lines": lines}, nil
 	})
 
+	// 规则引擎：语义实现已与 Kotlin 侧 core:rule 同源（共用 tests/corpus
+	// 与 tests/expect.tsv 作跨语言预言机）。规则**来源管理**（订阅下载、
+	// 自动更新）与编译产物落盘仍属 M5/M10，故 proxies/config.reload 等
+	// 仍留在下面的待实现表里。
+	srv.Handle("rules.test", handleRulesTest(paths))
+	srv.Handle("rules.syntax", handleRulesSyntax(paths))
+	srv.Handle("rules.stats", handleRulesStats(paths))
+	srv.Handle("rules.build", handleRulesBuild(paths))
+
 	// 尚未实现的方法：注册但返回明确错误。
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"proxies", "M3/M4"}, {"connections", "M9"}, {"traffic", "M9"},
-		{"rules.test", "M5/M10"}, {"filter.stats", "M10"},
+		{"proxies", "M3/M4"}, {"proxies.start", "M3"}, {"proxies.stop", "M3"},
+		{"proxies.reload", "M5"}, {"proxies.urlTest", "M4"}, {"proxies.select", "M4"},
+		{"connections", "M9"}, {"traffic", "M9"},
+		{"filter.stats", "M10"},
 		{"hook.status", "M11"}, {"leak.report", "M12"}, {"leak.fix", "M12"},
-		{"config.reload", "M5"}, {"proxies.select", "M4"},
+		{"config.reload", "M5"},
 	} {
 		name, milestone := m.name, m.milestone
 		srv.Handle(name, func(json.RawMessage) (any, error) {
@@ -580,15 +595,21 @@ func cmdRules(paths Paths, args []string) int {
 		}
 		fmt.Printf("\n规则引擎版本: %s\n", syfuse.Version())
 		fmt.Printf("支持协议: %s\n", strings.Join(syfuse.SupportedProtocols(), ", "))
-		// 规则条数需要编译产物；编译在 M5/M10 交付。
-		fmt.Println("\n规则条数统计: 未实现（需编译产物，计划里程碑 M5/M10）")
+		// 规则条数：真实编译一次再报，不再打印"未实现"。
+		printRuleStats(paths)
 		return 0
 
-	case "build", "syntax", "verify", "test", "testfile", "clear":
+	case "build", "syntax", "verify":
+		return cmdRulesReport(paths, sub)
+
+	case "test":
+		return cmdRulesTest(paths, args[1:])
+
+	case "testfile", "clear":
 		return notImplemented("rules "+sub, "M5（规则与分流）/ M10（过滤内核）",
-			"规则语义引擎目前在 Kotlin 侧（core:rule，已有 28 个用例与 38 条语料期望）。"+
-				"Go 侧的同语义实现与 App 共用同一套语料，随 M5/M10 交付；"+
-				"在它落地前，本子命令不做任何事，也不假装做过。")
+			"rules testfile 需要规则集文件格式与期望表的约定（随订阅管理交付）；"+
+				"rules clear 需要编译产物落盘（compiled.bin），两者都在 M5。"+
+				"在此之前规则语义本身已可用：见 rules test / syntax / verify / build。")
 
 	case "":
 		fmt.Fprintln(os.Stderr, "用法: syfused rules <paths|stats|build|syntax|verify|test|testfile|clear>")

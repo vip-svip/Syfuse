@@ -595,6 +595,25 @@ UI 显示当前可用引擎并允许切换；全部缺失时自动降级到 TPRO
 - 协议已按「版本号 + 方法名 + 结构化参数」设计，换编码只需替换 Encode/Decode 两个函数，方法语义不变。
 - 若 M3 证明 JSON 是瓶颈（如 `/traffic` 高频推送），会重新评估并在此处更新说明。
 
+### 模块划分的两处偏离（已登记）
+
+提示词 9.1 的模块清单是 `app / ui / domain / data / core / engine / daemon / privileged / hook`。
+本仓库有**两个**额外的子工程，都是被"必须能在只有 JDK 的环境里独立单测"这条要求逼出来的：
+
+| 额外模块 | 为什么不能塞进原模块 |
+|---|---|
+| `core:common` + `core:rule`（拆自 `core`） | 规则引擎是纯 JVM 逻辑，必须能在没装 Android SDK 的最小环境里验证语义。和 Android 相关的 `common` 放同一个工程会让这个能力丧失。 |
+| `daemon-protocol`（拆自 `daemon`） | **这条是实测倒逼的，不是洁癖。** 协议模型/客户端/传输接口本身一行 Android 代码都没有，但住在 Android library 里时，其**单元测试**源码集是对着 `android.jar` 编译的，而 `android.jar` 里**没有** `java.net.UnixDomainSocketAddress`（实测 android-35：无此类；`android/net/LocalSocket.class` 有）。后果是"App → UDS → 守护进程"这条往返在沙箱里**连编译都过不去**，只能等真机。拆成纯 JVM 模块后，测试对着真正的 JDK 编译，可以注入 AF_UNIX 传输，用**本机真实编译出的 `syfused` 进程**跑通往返。真机专属的 `android.net.LocalSocket` 实现留在 `:daemon`，两边各自被覆盖。 |
+
+代价与边界（诚实说明）：多两个 Gradle 子工程，构建图更复杂一点；
+并且**仍然不能**证明 `android.net.LocalSocket` 在真机上可用 ——
+那一步必须真机验证，记在 `PENDING-EXTERNAL.md`。
+这次拆分买到的是"协议是否正确"与"平台 API 是否可用"两件事的**解耦**，
+让前者可以在沙箱里被证明，而不是把两者捆在一起一起不可验证。
+
+`tests/run_module_checks.sh` 的 **R2b** 段逐条守着这个结构（模块是纯 JVM、
+无 `android.*` 依赖、JDK-only 实现只在 test 源集、真机实现仍在 `:daemon`）。
+
 ---
 
 ## 数据模型
@@ -750,11 +769,11 @@ https://cdn.example.com/js/     精确 URL 锚定
 ### 模块 CLI（`syfused`）
 
 **已实现**：`daemon` `serve` `status` `token [--rotate]` `restore [--dry-run|--apply]`
-`rules paths` `rules stats` `version` `help`
+`rules paths` `rules stats` `rules syntax|build|verify` `rules test` `version` `help`
 
 **已注册但未实现**（返回**退出码 78** + 计划里程碑，区别于普通错误 1）：
 `fetch`(M7/M10) `ca`(M8) `proxy`(M8) `hook`(M11) `leak`(M12)
-`rules build|syntax|verify|test|testfile|clear`(M5/M10)
+`rules testfile|clear`(M5/M10)
 
 ```bash
 syfused status                    # 运行状态 + 还原清单摘要 + 逐条校验问题
@@ -763,19 +782,31 @@ syfused token --rotate            # 重新生成（旧令牌立即失效）
 syfused restore                   # 打印还原计划（dry-run，默认）
 syfused restore --apply           # 执行还原
 syfused rules paths               # 打印全部规则相关路径及其存在性
+syfused rules stats               # 真实编译一次规则集后报数
+syfused rules test block-a.test   # 对单个请求跑一次匹配（含候选链路）
+syfused rules verify              # 规则体检（带行号的逐条诊断，有 ERROR 则退出码 1）
 ```
 
 ### UDS 控制协议
 
 socket `/data/adb/syfuse/control.sock`（0600），换行分隔 JSON，每次连接须带 token。
 
-**已实现方法**：`status` `version` `manifest.summary` `token.rotate` `log.tail`
+**已实现方法**（`DaemonProtocol.IMPLEMENTED_METHODS`）：
+`status` `version` `manifest.summary` `token.rotate` `log.tail`
+`rules.test` `rules.syntax` `rules.stats` `rules.build`
 
-**已注册未实现**（返回明确错误 + 里程碑）：`proxies` `connections` `traffic`
-`rules.test` `filter.stats` `hook.status` `leak.report` `leak.fix` `config.reload` `proxies.select`
+**已注册未实现**（返回明确错误 + 里程碑，**不是** `unknown_method`）：
+`proxies` `proxies.start` `proxies.stop` `proxies.reload` `proxies.select` `proxies.urlTest`
+`connections` `traffic` `filter.stats` `hook.status` `leak.report` `leak.fix` `config.reload`
 
-请求/应答格式见 `src/internal/ipc/ipc.go` 与 `daemon/src/main/kotlin/.../DaemonProtocol.kt`
-（两侧是同一份协议，**必须同步修改**）。
+> 为什么要**注册**而不是留空：留空会让 App 拿到 `unknown_method`，
+> 而它会被翻译成"模块不认识这个请求，可能是版本不匹配"——把用户引向完全错误的方向。
+> 注册之后 App 拿到的是"方法 `proxies.start` 尚未实现（计划里程碑 M3）"，
+> 这是一句用户能看懂、也能据此判断"该等还是该升级"的话。
+
+请求/应答格式见 `src/internal/ipc/ipc.go` 与
+`daemon-protocol/src/main/kotlin/.../DaemonProtocol.kt`
+（两侧是同一份协议，**必须同步修改**；`DaemonProtocolContractTest` 把 Go 源码当唯一事实来源逐项核对）。
 
 ### HTTP API / 浏览器面板 / Intent / URL Scheme
 

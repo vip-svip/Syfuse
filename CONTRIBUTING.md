@@ -14,7 +14,10 @@
 - 不要在 README / 注释 / commit message 里写未经验证的性能数字。
 - 不要声明一个未实现的能力（例如在 Manifest 里加 `BIND_VPN_SERVICE` 但没实现 VpnService）。
 - 不要 `throw NotImplementedError()` 占位。没实现就**不要提供那个入口**，
-  或者提供一个**如实报错**的实现（参考 `engine/NotLinkedDataPlane.kt`）。
+  或者提供一个**如实报错**的实现。参考 `engine/UdsDataPlane.kt`：
+  通道是真的（走 UDS 连真实守护进程），但 `proxies.start` 还没实现，
+  于是它把守护进程回的"尚未实现（计划里程碑 M3）"原样带上来，
+  绝不会让界面显示"已连接"。
 
 `tests/run_module_checks.sh` 里有对应的静态断言。破坏了会让 CI 变红。
 

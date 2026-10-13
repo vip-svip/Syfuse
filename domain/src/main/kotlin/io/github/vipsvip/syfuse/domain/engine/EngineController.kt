@@ -82,6 +82,19 @@ interface DataPlane {
 
     /** 不可用时的原因，用于如实展示给用户而不是假装连接成功。 */
     val unavailableReason: String?
+
+    /**
+     * 主动探测一次可用性（**可能触发 IO**）。
+     *
+     * 为什么不能只靠 [available]：对走 UDS 连守护进程的数据面，
+     * "可用"不是静态属性 —— 守护进程可能没启动、访问令牌可能还没配对、
+     * 用户可能刚在 action.sh 里停掉它。[available] 因此只能是
+     * **最近一次探测的结果**，一个非 suspend 的 getter 不能自己去发起 IO。
+     *
+     * [EngineController] 在开始连接前会调用本方法刷新一次，
+     * 使"守护进程后来起来了"这件事能被自动发现，而不是要用户重启 App。
+     */
+    suspend fun probeAvailability(): Boolean
 }
 
 /**
@@ -116,13 +129,20 @@ class EngineController(
             return reject("引擎正在状态迁移中（$current），请稍后再试")
         }
 
-        if (!dataPlane.available) {
-            val reason = dataPlane.unavailableReason ?: "内核不可用"
+        // 数据面可用性不是静态属性：走 UDS 连守护进程的实现，其可用性会随
+        // 守护进程起停与令牌配对状态而变。因此先刷新一次再判定 ——
+        // 否则"守护进程后来起来了"只能靠重启 App 才能被发现。
+        val usable = dataPlane.available || dataPlane.probeAvailability()
+        if (!usable) {
+            val reason = dataPlane.unavailableReason ?: "数据面不可用"
             val error = SyfuseError(
                 code = ErrorCode.ENGINE_START_FAILED,
                 technical = reason,
-                userMessage = "无法建立连接：内核尚未接入",
-                hint = "本版本尚未内置代理内核（计划在 M2 交付）。当前可浏览与编辑配置、节点与规则。",
+                userMessage = "无法建立连接：数据面不可用",
+                // hint 直接采用数据面给出的原因：那是它对自己状态的**真实**描述，
+                // 比上层能编的任何话都准确（例如"代理内核尚未接入…"或
+                // "无法连接守护进程…"）。
+                hint = reason,
             )
             _status.value = EngineStatus(EngineState.ERROR, clock(), error)
             return SyfuseResult.Failure(error)

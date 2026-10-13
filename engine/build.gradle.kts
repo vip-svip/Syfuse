@@ -17,6 +17,15 @@ android {
         minSdk = 26
     }
 
+    // 与 daemon 模块同样的理由：测试用 JUnit 5，不显式声明 useJUnitPlatform()
+    // 的话 Gradle 会按 JUnit 4 找测试，结果是"任务成功、0 个用例" ——
+    // 那是最危险的一种绿。
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -32,10 +41,19 @@ kotlin {
 dependencies {
     api(project(":domain"))
 
+    // 走 UDS 的数据面（UdsDataPlane）需要守护进程客户端。
+    // daemon 模块只依赖 domain 的错误类型契约，不反向依赖本模块，无循环。
+    implementation(project(":daemon"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.truth)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

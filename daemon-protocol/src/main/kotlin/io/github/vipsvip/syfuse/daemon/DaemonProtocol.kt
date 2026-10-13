@@ -52,20 +52,35 @@ object DaemonProtocol {
     /** 已实现的方法名。未列出的方法调用会拿到明确的"未实现"错误。 */
     val IMPLEMENTED_METHODS = setOf(
         "status", "version", "manifest.summary", "token.rotate", "log.tail",
+        // 规则引擎：语义实现已与 core:rule 同源（两侧共用 tests/corpus 与
+        // tests/expect.tsv 作跨语言预言机）。规则**来源管理**（订阅下载、
+        // 自动更新）与编译产物落盘仍属 M5/M10。
+        "rules.test", "rules.syntax", "rules.stats", "rules.build",
     )
 
-    /** 已注册但**尚未实现**的方法 → 计划里程碑。UI 据此把入口标为"实验性/不可用"。 */
+    /**
+     * 已注册但**尚未实现**的方法 → 计划里程碑。UI 据此把入口标为"实验性/不可用"。
+     *
+     * `proxies.start` / `proxies.stop` 是数据面（UdsDataPlane）转发的目标：
+     * 它们被**注册**而不是留空，是为了让 App 拿到
+     * "方法 proxies.start 尚未实现（计划里程碑 M3）"这种可展示的原因，
+     * 而不是 `unknown_method` —— 后者会被 [daemonErrorHint] 翻译成
+     * "模块不认识这个请求，可能是版本不匹配"，把用户引向完全错误的方向。
+     */
     val PENDING_METHODS: Map<String, String> = mapOf(
         "proxies" to "M3/M4",
+        "proxies.start" to "M3",
+        "proxies.stop" to "M3",
+        "proxies.reload" to "M5",
+        "proxies.urlTest" to "M4",
+        "proxies.select" to "M4",
         "connections" to "M9",
         "traffic" to "M9",
-        "rules.test" to "M5/M10",
         "filter.stats" to "M10",
         "hook.status" to "M11",
         "leak.report" to "M12",
         "leak.fix" to "M12",
         "config.reload" to "M5",
-        "proxies.select" to "M4",
     )
 }
 

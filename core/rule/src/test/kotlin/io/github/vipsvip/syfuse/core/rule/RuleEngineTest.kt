@@ -202,3 +202,49 @@ class RuleParserTest {
         assertThat(network.warnings).hasSize(1)
     }
 }
+
+/**
+ * 移植到 Go 时发现的两处 Kotlin 侧缺陷的回归测试。
+ *
+ * 两处都由"跨语言语料一致性"暴露出来：Go 侧按同一份语料跑出
+ * 元素规则 6 条 / 忽略行 35 行，而 Kotlin 侧原实现给出 7 / 34。
+ * 修复后两侧必须给出同一组数字（另见 CorpusConsistencyTest 的计数断言）。
+ */
+class PortedDefectRegressionTest {
+
+    @Test
+    fun `起始与结尾锚定必须真的生效`() {
+        // 修复前：结尾锚点被写成正则里的 `\$`（字面美元符），
+        // 于是 `|...|` 形态的规则永远不可能命中。
+        val outcome = RuleParser.parseLine("|https://anchor.test/x|", 1)
+        val rule = (outcome as ParseOutcome.Network).rule
+        val regex = (rule.pattern as RulePattern.RegexPattern).regex
+
+        assertThat(regex.containsMatchIn("https://anchor.test/x")).isTrue()
+        assertThat(regex.containsMatchIn("https://anchor.test/x?q=1")).isFalse()
+        assertThat(regex.containsMatchIn("https://anchor.test/xy")).isFalse()
+    }
+
+    @Test
+    fun `含双井号的注释行不得被误判为元素规则`() {
+        // 修复前：注释正文里的 `##` 会被当成元素标记。
+        val ignored = RuleParser.parseLine("# 说明（与 ## 元素规则区分）", 1)
+        assertThat(ignored).isInstanceOf(ParseOutcome.Ignored::class.java)
+
+        // 真正的全局元素规则仍必须被识别。
+        val global = RuleParser.parseLine("##.ad-global", 1)
+        assertThat(global).isInstanceOf(ParseOutcome.Cosmetic::class.java)
+    }
+
+    @Test
+    fun `行数统计与 wc -l 一致`() {
+        // 修复前用 lineSequence()：以换行结尾的文本会多算一个空行。
+        assertThat(RuleParser.linesOf("a\n")).containsExactly("a")
+        assertThat(RuleParser.linesOf("a")).containsExactly("a")
+        assertThat(RuleParser.linesOf("a\nb\n")).containsExactly("a", "b").inOrder()
+        // 三个换行符 → 三行：a 加两个空行（只去掉一个结尾空段）
+        assertThat(RuleParser.linesOf("a\n\n\n")).containsExactly("a", "", "").inOrder()
+        assertThat(RuleParser.linesOf("a\r\nb\r\n")).containsExactly("a", "b").inOrder()
+        assertThat(RuleParser.linesOf("")).isEmpty()
+    }
+}

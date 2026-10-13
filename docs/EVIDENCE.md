@@ -3,10 +3,10 @@
 > 提示词 2.9 / 2.10 第 6 条：**证据必须落盘**，不能只活在聊天里。
 > 本文件的每一段都是命令的**原始输出**（未改写、未摘要），可直接复现。
 >
-> - 采集时间：2026-10-13T03:15:00Z（第 3 轮重采）
+> - 采集时间：2026-10-13T04:35:00Z（第 4 轮重采）
 > - 采集环境：Windows 10 / JDK 21.0.12.1+1 / Go 1.23.4 / Gradle 8.11.1 / Android SDK platform-35 + build-tools 35.0.0
 > - 采集时 HEAD：``（即本文件所在提交）
-> - 跟踪文件数：188
+> - 提示词文件：**157194 字节 / 2205 行**（第 3 轮时为 146185 字节 / 2098 行 —— **文件已被更新**，新增 2.11 提速规范与 2.11-I 安全红线；这一变化直接导致本文件 §14 记录的门禁脚本不一致）
 > - `adb devices`：**空**（无真机 → 所有设备类检查 `exit 3 = SKIP`，SKIP 不是通过）
 
 ---
@@ -15,12 +15,12 @@
 
 | 检查 | 退出码 | 结论 |
 |---|---|---|
-| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项） |
-| 交付门禁（README.md） | **0** | 全部通过（WARN 2 项），需求项 36 条缺失 0 条 |
+| 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项）—— **但见 §14：门禁脚本与附录不一致，此结论不完整** |
+| 交付门禁（README.md） | **0** | 全部通过（WARN 2 项），需求项 36 条缺失 0 条 —— **附录实为 38 条，见 §14** |
 | `tools/scan_secrets.py` | **0** | PASS — 无禁止项（WARN 25 条，豁免 19 条） |
-| `tests/run_unit.sh`（JVM 单测） | **0** | **6 套件 / 68 用例 / 失败 0 / 跳过 0** |
-| `cd src && go test ./...` | **0** | 3 包全绿；**88 用例 = 86 PASS + 2 SKIP + 0 FAIL** |
-| `tests/run_module_checks.sh` | **0** | PASS=101 FAIL=0 PEND=1 |
+| `tests/run_unit.sh`（JVM 单测） | **0** | **5 模块 / 15 套件 / 126 用例 / 失败 0 / 错误 0 / 跳过 1** |
+| `cd src && go test ./...` | **0** | 4 包全绿；**127 用例 / 0 失败** |
+| `tests/run_module_checks.sh` | **0** | PASS=109 FAIL=0 PEND=1 |
 | `tests/run_restore_check.sh` | **0** | PASS=17 FAIL=0 |
 | `tests/ui_assets_check.sh` | **0** | PASS=8 FAIL=0（内联文案 372 处，PEND 不判失败） |
 | `tests/ui_parity_check.sh` | **0** | PASS=27 FAIL=0 PEND=6 |
@@ -35,12 +35,19 @@
 
 > `PEND` 表示里程碑未完成，**不是通过**；`SKIP` 同理。退出码约定见 `PROGRESS.md`。
 >
-> **JVM 用例数从 54 涨到 68**，增量全部来自本轮新增的 `:daemon` 跨语言协议契约测试（14 条）。
-> **Go 用例数从 86 涨到 88**：本轮把 UDS 相关断言从"按 OS 名跳过"改为"按能力探测跳过"，
-> 于是它们在 Windows 上开始**真实执行**（其中 2 条 POSIX 权限位断言仍按能力探测跳过）。
+> **JVM 用例数 68 → 126**（套件 6 → 5）。数字变化有三条来源，逐条说清以免被误读成"退了"：
+> 1. **协议契约测试换了模块**：`:daemon`（Android library）→ `:daemon-protocol`（纯 JVM）。
+>    它原先根本编译不过（`android.jar` 里没有 `java.net.UnixDomainSocketAddress`），
+>    详见 §14 与 README 的「模块划分的两处偏离」。
+> 2. **新增 13 条真实往返用例**：用本机 `go build` 出的 `syfused` 进程跑通
+>    「客户端 → UDS → 守护进程」，见 §4b。这是本轮的**核心新增证据**。
+> 3. **套件数从 6 降到 5 是"去掉了一个假计数"**：第 3 轮的汇总 glob 漏掉了
+>    `core/rule`（在 `core/` 下一层），同时又**把 `:daemon` 迁移后残留的旧 XML 计了进去**。
+>    现在的 5 = `core:rule` + `domain` + `daemon-protocol` + `engine` + `ui`，逐个点名可核对。
 >
-> **注意：`go test` 的 86 PASS 不含 2 条 SKIP。** 早先本表与 README 写"84 用例"是把跳过项也算了进去，
-> 数字对不上；现在统一按 `run_kernel.sh` 打印的口径（`用例=86 失败=0`）+ 单独标注跳过数。
+> **Go 用例数 88 → 127**：本轮把 `core:rule` 的规则语义移植进 `src/syfuse/rule/`，
+> 并让两个语言消费**同一份** `tests/corpus` + `tests/expect.tsv`（跨语言预言机）。
+> 第 3 轮那条"2 条 SKIP"的能力探测跳过项仍在，且**不计入 127**。
 
 ---
 
@@ -256,8 +263,9 @@ $ python tools/scan_secrets.py
 :: Gradle: /f/Ai/Syfuse/gradlew
 :: Android SDK: /c/Users/admin/.workbuddy-ai/toolchain/android-sdk
 
-:: 执行: :core:rule:test :domain:test :data:testDebugUnitTest :ui:testDebugUnitTest :daemon:testDebugUnitTest
+:: 执行: :core:rule:test :domain:test :daemon-protocol:test :data:testDebugUnitTest :ui:testDebugUnitTest :engine:testDebugUnitTest
 -------------------------------------------------------------------
+:: 已清理上一轮测试报告目录: 5 个
 Starting a Gradle Daemon, 1 incompatible and 10 stopped Daemons could not be reused, use --status for details
 > Task :ui:preBuild UP-TO-DATE
 > Task :core:common:checkKotlinGradlePluginConfigurationErrors SKIPPED
@@ -406,62 +414,83 @@ w: file:///F:/Ai/Syfuse/ui/src/test/kotlin/io/github/vipsvip/syfuse/ui/glass/Gla
 > Task :ui:transformDebugUnitTestClassesWithAsm
 > Task :ui:testDebugUnitTest
 
-BUILD SUCCESSFUL in 1m 4s
-63 actionable tasks: 63 executed
+BUILD SUCCESSFUL in 1m 20s
+83 actionable tasks: 83 executed
 -------------------------------------------------------------------
-[UNIT SUMMARY] 套件文件=6 用例=68 失败=0 错误=0 跳过=0
+[UNIT SUMMARY] 模块=5 套件文件=15 用例=126 失败=0 错误=0 跳过=1
+[UNIT MODULES] core\rule daemon-protocol domain engine ui
+[UNIT SKIPPED] io.github.vipsvip.syfuse.core.rule.RuleEngineBenchmark#百万级规则编译与匹配基准()
 [UNIT RESULT] PASS
 ```
 
-本轮新增的第 6 个套件是 `:daemon:testDebugUnitTest`（跨语言协议契约测试）。它单独跑的输出：
+> 上段中间的 Gradle 任务清单（约 250 行）已省略，只保留首尾与汇总 ——
+> 完整的 281 行原始输出可用 `bash tests/run_unit.sh` 复现，逐行一致。
+> 汇总里的**模块清单与跳过项点名**是有意加的：只报一个"失败=0"曾经掩盖过
+> "某个模块根本没被统计"（§11 缺陷表第 4 轮）。
+
+### 4b. 真实进程往返：客户端 → UDS → 守护进程
+
+这是 M3 在**无设备**的沙箱里能得到的最强证据。它证明的不是"协议定义没漂移"
+（那是 §4 里 14 条契约测试的事），而是**两侧的手工实现真的能对上**：
+JSON 字段名、协议版本、令牌校验、方法名、错误码、规则语义。
 
 ```text
-> Task :daemon:compileDebugUnitTestKotlin
-> Task :daemon:testDebugUnitTest
-
-BUILD SUCCESSFUL in 32s
-21 actionable tasks: 21 executed
+$ sh gradlew :daemon-protocol:test --tests '*DaemonWireRoundTripTest*'
+DaemonWireRoundTripTest > status 往返拿到真实守护进程的状态() PASSED
+DaemonWireRoundTripTest > version 往返拿到守护进程版本与内核版本() PASSED
+DaemonWireRoundTripTest > rules_test 内联规则集给出与 Kotlin 侧一致的决策与优先级() PASSED
+DaemonWireRoundTripTest > rules_test 回传的统计证明守护进程真的编译了内联规则集() PASSED
+DaemonWireRoundTripTest > collectChain 为真时链路里能看到命中规则与是否生效() PASSED
+DaemonWireRoundTripTest > rules_test 能从 url 推导 host 再裁决() PASSED
+DaemonWireRoundTripTest > rules_syntax 回传带行号的逐条诊断() PASSED
+DaemonWireRoundTripTest > rules_test 缺少 host 时如实报错并说明原因() PASSED
+DaemonWireRoundTripTest > 不存在的资源类型被拒绝并列出可用值() PASSED
+DaemonWireRoundTripTest > 错误令牌被守护进程拒绝且 App 给出可操作提示() PASSED
+DaemonWireRoundTripTest > 已注册但未实现的方法返回明确里程碑而不是未知方法() PASSED
+DaemonWireRoundTripTest > 隧道未实现时拿到的是可展示的原因而不是「版本不匹配」() PASSED
+DaemonWireRoundTripTest > 完全未知的方法才返回 unknown_method() PASSED
+BUILD SUCCESSFUL
 ```
+
+**测试怎么拿到"真实"**：`@BeforeAll` 用本机 Go 工具链 `go build ./cmd/syfused`
+编出一个真二进制，以 `SYFUSE_DATA_DIR=<短临时目录>` 启动，等 socket 与 token 文件出现，
+再用基于 JDK AF_UNIX 的传输（`JvmUnixSocketTransport`，仅 test 源集）发请求。
+环境前提是**实测过的**，不是假设：Go 1.23 与 JDK 21 在 Windows 10 1803+ 都支持 AF_UNIX
+（Go 侧另有 `probeUnixSocket` 的能力探测）。
+
+**缺 Go 工具链时它失败而不是跳过**：内核是本仓库的交付主体，工具链缺失属于"环境缺失"，
+按 `tests/env.sh` 的约定不得被当成通过。一个被跳过的往返测试比没有更危险 ——
+它会给人"往返已经受保护了"的错觉。
+
+#### 变异测试：证明这些断言不是空转
 
 ```text
-tests=14 failures=0 errors=0 skipped=0
-  - Response 的 JSON 字段名与 Go 侧一致()
-  - 数据目录与 Go 侧的 base 默认值一致()
-  - 协议级错误码必须有本地翻译，内部错误码有意透传原文()
-  - 文件名常量在 Go 侧真实出现()
-  - 待实现方法与里程碑映射与 Go 侧一致()
-  - 还原清单路径与 Go 侧构造表达式一致()
-  - 待实现方法表没有被正则漏抓()
-  - 已实现方法集合与 Go 侧注册的处理器一致()
-  - 协议版本与 Go 侧一致()
-  - 每个待实现方法都带计划里程碑()
-  - Request 的 JSON 字段名与 Go 侧一致()
-  - 错误码集合与 Go 侧一致()
-  - 超时为正且不超过十秒()
-  - 已实现与待实现方法互斥()
+变异 1：Kotlin 侧 PROTOCOL_VERSION 1 → 2
+  13 tests completed, 13 failed        ← 全部往返红（守护进程回 version_too_new）
+  还原 → BUILD SUCCESSFUL
+
+变异 2：Go 侧 PriorityNormalBlock 的名字 normal-block → normal-block-MUTANT
+  13 tests completed, 1 failed
+  DaemonWireRoundTripTest > rules_test 内联规则集给出与 Kotlin 侧一致的决策与优先级() FAILED
+  还原 → BUILD SUCCESSFUL
 ```
 
-### 变异测试：证明这些断言不是空转
+变异 2 的价值在于**精确**：只命中语义一致性那一条，另外 12 条不受影响 ——
+说明"断言与它声称保护的东西"是对齐的，不是碰巧一起红。
 
-把 Kotlin 侧注入 3 处**故意的**协议漂移（协议版本 1→2、错误码 `unknown_method`→`unknownMethod`、
-已实现方法表多一个 `engine.restart`），然后重跑：
+#### 诚实边界（不得省略）
+
+1. 本测试**不能**证明 `android.net.LocalSocket` 在真机上可用。那一步必须真机验证
+   （`PENDING-EXTERNAL.md`）。它证明的是"协议两侧一致"，不是"平台 API 可用" ——
+   这两件事被**刻意解耦**（见 §14 与 README 的「模块划分的两处偏离」）。
+2. `proxies.start` 目前是"已注册但未实现"，所以断言的是**如实失败**，不是"隧道已连接"。
+   把"能如实失败"当成"隧道可用"是绝对不允许的。
+3. 用的是本机 `go build` 出的**宿主平台**二进制，不是 Android 上的 arm64 产物。
+   交叉编译产物能否在设备上跑，属真机验证范围。
 
 ```text
-> Task :daemon:testDebugUnitTest FAILED
-DaemonProtocolContractTest > 已实现方法集合与 Go 侧注册的处理器一致() FAILED
-DaemonProtocolContractTest > 协议版本与 Go 侧一致() FAILED
-DaemonProtocolContractTest > 错误码集合与 Go 侧一致() FAILED
-14 tests completed, 3 failed
-BUILD FAILED in 32s
+tests=13 failures=0 errors=0 skipped=0
 ```
-
-还原后：
-
-```text
-BUILD SUCCESSFUL in 15s
-```
-
-3 处注入 → 精确命中 3 条断言，其余 11 条不受影响。**不做这一步就无法区分"断言有效"与"断言空转"。**
 
 ---
 
@@ -557,9 +586,21 @@ FAIL
 
 == R2 内核静态随包，不在运行时下载二进制 ==
   [PASS] 源码中无运行时下载内核二进制的行为
-  [PEND] 内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 NotLinkedDataPlane，不得对外声称代理可用
-  [PASS] EngineModule 绑定 NotLinkedDataPlane，与内核未接入状态一致
+  [PEND] 内核尚未随包接入（计划里程碑 M3）。当前 engine 绑定 UdsDataPlane（走 UDS 连真实守护进程），但 proxies.start 仍未实现，不得对外声称代理可用
+  [PASS] EngineModule 绑定 UdsDataPlane（走 UDS 连真实守护进程）
+  [PASS] proxies.start 仍登记为待实现（M3），隧道不会被谎报为已连接
   [PASS] 源码中无遥测/归因域名常量
+
+== R2b 协议层与 Android 传输分离（沙箱可验证的物理前提） ==
+  [PASS] daemon-protocol 模块存在
+  [PASS] daemon-protocol 使用 kotlin.jvm（纯 JVM，未引入 Android 插件）
+  [PASS] settings.gradle.kts 已包含 :daemon-protocol
+  [PASS] daemon-protocol 源码无 android.* 依赖（注释除外）
+  [PASS] JDK-only 的 UnixDomainSocketAddress 未进主产物（仅 test 源集使用）
+  [PASS] 真机传输 LocalSocketTransport 位于 :daemon（Android library）
+
+== 测试用例名不得含 Windows 非法文件名字符 ==
+  [PASS] 全部 Kotlin 用例名不含 Windows 非法文件名字符
 
 == R3 零遥测 ==
   [PASS] 版本目录中无遥测/广告 SDK 坐标
@@ -677,7 +718,7 @@ FAIL
   [PASS] manifest 对不可还原条目的登记返回错误（硬约束在代码层）
 
 ===========================================
-module-checks 汇总: PASS=101 FAIL=0 PEND=1
+module-checks 汇总: PASS=109 FAIL=0 PEND=1
 注意：PEND 表示里程碑未完成，不是通过。
 ===========================================
 ```
@@ -1165,6 +1206,26 @@ ZIP 内含（顶层）：`module.prop`、`customize.sh`、`post-fs-data.sh`、`s
 | `GlassPolicyTest` 里含 `%` 的测试名触发 Windows 警告 | 改名后 `ui:compileDebugUnitTestKotlin` 无该警告 |
 | `tools/verify_remote.py` 把非 200 一律当"文件缺失"，产出**假失败** | 改用单次 `git/trees` 取全量路径；404 与其他错误分开处理，"无法确定" → `exit 3`。变异测试：真缺失 → MISSING/exit 1；限流 → UNDETERMINED/exit 3（详见第 12 节） |
 
+### 第 4 轮（本轮）
+
+本轮的主线是「把 `core:rule` 的规则语义移植进 Go，并让两个语言共用同一份语料期望表」。
+**移植本身抓出了 3 个 Kotlin 侧既有缺陷** —— 这正是建立跨语言预言机的目的：
+同一份期望表被两个独立实现各消费一遍，语义漂移无处可藏。
+
+| 修复 | 回归证据 |
+|---|---|
+| `PatternCompiler.wildcardBody` 把结尾锚点写成 `"\\$"`（正则字面美元符），`\|https://x/y\|` 这一整族规则**永远不可能命中** | 新增 `TestPatternAnchorEnd` / `起始与结尾锚定必须真的生效`；修复前该用例失败，修复后两侧通过 |
+| `#` 开头的注释行若含 `##`，被误判为元素隐藏规则（语料第 70 行），元素规则数虚报为 7（实际 6） | 新增 `TestCommentContainingHashHashIsIgnored` / `含双井号的注释行不得被误判为元素规则`；两侧元素规则数统一为 6 |
+| 行数统计与 `wc -l` 不一致（Kotlin `lineSequence()` 为以 `\n` 结尾的文件多留一个空段，71 行语料 → 72） | 以 `wc -l`（71）为基准统一；新增 `TestSplitLines_MatchesWcLineCount` / `行数统计与 wc -l 一致` |
+| `JvmUnixSocketTransport` **从未重新 register 兴趣集**：只注册了 `OP_CONNECT`，之后 select 永不报"可写"，首次 write 一路等到 deadline，报"写入 超时"（伪装成"守护进程没应答"） | 修复前 13 条往返全部红且错误信息指向守护进程；补 `register(OP_WRITE)` / `register(OP_READ)` 后全绿 |
+| Kotlin 用例名含双引号 → 生成 `.class` 文件名时抛 `InvalidPathException: Illegal char <">`（Windows 文件名限制；Linux/macOS 正常） | 改名后编译通过；并在 `run_module_checks.sh` 加断言防复发 |
+| `rules_test` 往返测试里内联规则集**定义了却没用**（变量未被引用），"用真实规则引擎裁决"这句注释是假的 | 改为真的传入 `rules` 并断言具体决策（block/allow/important-allow/none 四例） |
+| `run_unit.sh` 汇总 glob 漏掉 `core/rule`、`core/common`（在 `core/` 下一层），"失败=0"是绿的但没统计到那两个模块 | 改递归 glob 并打印 `[UNIT MODULES]` 清单，逐个点名可核对 |
+| `run_unit.sh` 把 `:daemon` 迁移后**残留的旧 XML** 计入汇总，模块数虚报 6、用例数虚报 140（实际 5 / 126） | 跑之前先清理全部 `*/build/test-results`；修复后为 5 模块 / 126 用例 |
+| `run_unit.sh` 只报跳过**数量**，不点名 | 新增 `[UNIT SKIPPED]` 行，点名到 `类#用例` |
+| `src/cmd/syfused/rules_test.go` 未 gofmt | `tests/run_kernel.sh` 的 `gofmt -l` 从 FAIL 转 PASS |
+| **`tools/verify_deliverable.*` 与提示词附录不一致 4 处，其中 3 处高危** | 见 §14。**已按指令停手，未修改** —— 待 T0 处理 |
+
 ---
 
 ## 12. 推送后远程核验
@@ -1240,3 +1301,186 @@ $ python tools/verify_remote.py --repo vip-svip/Syfuse --branch main --expect-pu
 
 **死 UI 声明**：当前界面上没有任何"看起来可用但未接通"的开关 ——
 App 仍是最小骨架，未接入代理内核、DNS、MITM、过滤等能力，因此这些入口不存在或明确标注不可用。
+
+> **本轮更正（2.9「自查发现上一轮说过的话经不起验证时，主动更正」）**：
+> 上一句里的"未接入代理内核"仍然成立（隧道确实没通），但"仍是最小骨架"已不准确 ——
+> M2 已交付 7 Tab 布局 B + OKLCH 设计令牌 + 受控玻璃 + 7 个功能页，
+> 且本轮 `EngineModule` 已改为绑定走真实 UDS 通道的 `UdsDataPlane`。
+> 正确的说法是：**界面与控制通道是真的，隧道是未实现的，且未实现这一点会如实展示**。
+
+---
+
+## 14. 门禁脚本审计（Step 0）—— **发现不一致，已停手**
+
+提示词 2.11 的 Step 0 要求：动手前先核对 `tools/verify_deliverable.ps1` / `.sh`
+与提示词附录是否完全一致，**发现差异立即停止并向用户报告**。
+
+### 14.1 首要事实：提示词文件在**本轮会话期间被改动了两次**
+
+| 时点 | 字节数 | 行数 | 附录形态 |
+|---|---|---|---|
+| 第 3 轮记录 | 146185 | 2098 | 正文（明文代码块） |
+| 本轮 Step 0 开始时 | 157194 | 2205 | 正文（明文代码块），新增 2.11 / 2.11-I |
+| 本轮 Step 0 进行中 | **168369** | **1964** | **改为 base64 编码**（附录 A/B/C 各一段 base64 + 声明的字节数） |
+
+采集时提示词文件 `sha256 = ef6eed76c7fa7a412355031ff68326e0ef757ea52c3acbc49e9965da731d747d`。
+
+> 这件事本身是**好消息**：改成 base64 之后，"把脚本落盘"从"复制粘贴 + 祈祷编码别坏"
+> 变成**可逐字节校验的机械操作**（解码 → 比对声明字节数 → 比对 sha256）。
+> 之前 `.ps1` 的 BOM 就是在这个环节静默丢掉的（提示词 2.9 专门警告过）。
+
+### 14.2 比对方法（可复现）
+
+1. 定位附录的 ` ````text ` 围栏（当前在 1555 / 1716 / 1849 行），取出中间内容；
+2. 去掉换行后 base64 解码；
+3. 核对**解码字节数**是否等于附录自己声明的 `base64 字节数`；
+4. 与本地文件做**逐字节**比较（不做任何归一化）；不一致时再归一化（剥 BOM、CRLF→LF）
+   做行级 diff，以区分"只是换行不同"与"内容真的不同"。
+
+只比哈希是不够的 —— 哈希不同但说不出差在哪，等于没查。
+
+### 14.3 三个附录，三个都不一致
+
+| 脚本 | 附录（base64 解码后） | 本地 | 差异性质 |
+|---|---|---|---|
+| `tools/verify_deliverable.ps1` | 11477 B / BOM / LF / 238 行<br>`sha256 917b5456e9…` | 10942 B / BOM / **CRLF** / 226 行<br>`sha256 ce305c1a61…` | **内容缺 12 行** + CRLF |
+| `tools/verify_deliverable.sh` | 9405 B / NOBOM / LF / 228 行<br>`sha256 7d4baa99bd…` | 9281 B / NOBOM / LF / 226 行<br>`sha256 8b293f6498…` | **内容缺 2 行** |
+| `tools/run_agent.ps1` | 8187 B / BOM / LF / 184 行<br>`sha256 07c16e89c6…` | 8370 B / BOM / **CRLF** / 184 行<br>`sha256 b957fc25b1…` | **内容完全相同**，只有 CRLF（183 处，正好等于 8370−8187） |
+
+三个附录的解码字节数都**精确等于**各自声明的 `base64 字节数`（11477 / 9405 / 8187），
+所以附录侧没有损坏，差异全在本地。
+
+**`verify_deliverable.ps1` 缺的 12 行**（归一化后的行级 diff）：
+
+```text
+@@ -170,2 +169,0 @@
+-37 提速与并行执行规范|提速与并行执行规范
+-38 安全提速红线（提速不得降质）|安全提速红线
+@@ -202,9 +199,0 @@
+-<# 读取文件头 3 字节。PowerShell 5.1 用 -Encoding Byte，PowerShell 7+ 已移除该参数（改用 -AsByteStream），
+-   所以必须按版本选参数，否则在 pwsh 7 下直接抛错、整个门禁崩掉。
+-   读失败（文件被占用/权限不足/正好在写）只告警跳过，不能让整个门禁中止。 #>
+-function Get-HeadBytes([string]$p, [int]$n = 3) {
+-  if ($PSVersionTable.PSVersion.Major -ge 7) {
+-    return @(Get-Content -LiteralPath $p -AsByteStream -TotalCount $n)
+-  }
+-  return @(Get-Content -LiteralPath $p -Encoding Byte -TotalCount $n)
+-}
+@@ -213,2 +202 @@
+-  try { $b = Get-HeadBytes $s.FullName 3 }
+-  catch { Warn ($s.Name + " 读取失败，已跳过：" + $_.Exception.Message); continue }
++  $b = @(Get-Content -LiteralPath $s.FullName -Encoding Byte -TotalCount 3)
+```
+
+**`verify_deliverable.sh` 缺的 2 行**：
+
+```text
+@@ -171,3 +171 @@
+-36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**
+-37 提速与并行执行规范|提速与并行执行规范
+-38 安全提速红线（提速不得降质）|安全提速红线'
++36 作者 GitHub 地址内置到 App|作者与开源信息**内置到 App 里**'
+```
+
+### 14.4 三处高危影响（逐条说清，不含糊）
+
+**① 门禁第 ⑤ 组看不到本次提速模式自身的约束（`.sh` 与 `.ps1` 都有）**
+
+附录有 38 条需求行，本地只有 36 条 —— 缺的正好是
+`37 提速与并行执行规范` 与 `38 安全提速红线（提速不得降质）`。
+也就是**这一轮要执行的规则，门禁自己不检查**。实测输出：
+
+```text
+$ bash tools/verify_deliverable.sh "F:/Ai/Syfuse-完美提示词.md" 1000
+  [PASS] 36 作者 GitHub 地址内置到 App
+  需求项 36 条，缺失 0 条
+```
+
+"缺失 0 条"和 `exit 0` 都是真的，但它检查的是**更新前的那 36 条**。
+
+**② `.ps1` 缺 `Get-HeadBytes`：在 PowerShell 7+ 上会把整个门禁搞崩**
+
+`-Encoding Byte` 在 **PowerShell 7+ 已被移除**（改用 `-AsByteStream`）。
+本地版本没有版本分支、也没有 `try/catch`，于是：pwsh 7 下直接抛错；
+文件被占用（构建中 / 杀毒扫描）时中止整个门禁，而附录明确要求"只告警跳过"。
+本机 `powershell` 是 **5.1**，所以现在跑得通 —— 属于**在错误的环境上恰好绿**。
+
+**③ `.sh` 第 ⑥ 组从未真正执行过**（附录 B 原文就有这个 bug，不是同步问题）
+
+`$PRUNE` 在使用处**未加引号**，会被 bash 做**通配展开**：
+
+```bash
+PRUNE='-path */.git/* -o -path */build/* -o -path */node_modules/* ...'
+find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null
+```
+
+实测 `*/build/*` 在仓库根展开成 **58 个** `app/build/...` 路径，find 因此报错退出、
+输出为空，而 `2>/dev/null` 把错误吞掉：
+
+```text
+$ find . -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>&1 | head -6
+find: paths must precede expression: `app/build/intermediates'
+find: possible unquoted pattern after predicate `-path'?
+
+$ ls -d */build/* 2>/dev/null | wc -l
+58
+```
+
+于是 `FOUND=0` → 只报 `[WARN] 未找到 .ps1/.sh 可检查（跳过）`，**退出码仍是 0**。
+
+同一个门禁的 `.ps1` 版用的是 `Get-ChildItem -Recurse -File` + `Where-Object`，**没有**这个问题。
+实测它能正确检查 `package.sh`、4 个 `module/*.sh`、`verify_deliverable.sh`，
+并正确 PASS 自身的 BOM：
+
+```text
+$ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_deliverable.ps1 -Path README.md -MinLines 300
+== 6. 脚本编码规范 ==
+  [PASS] package.sh 无 BOM（shebang 正确）
+  [PASS] package.sh 换行为 LF（正确）
+  ...
+  [PASS] verify_deliverable.ps1 带 UTF-8 BOM（PS 5.1 解码正确）
+== 汇总 ==
+  全部通过（WARN 1 项）
+```
+
+**两版行为不一致本身就是缺陷**：附录开头写着"与 verify_deliverable.sh 检查项一致（共 6 组）"，
+而第 ⑥ 组在 `.sh` 版是死检查、在 `.ps1` 版是真检查。
+
+### 14.5 顺带发现：提示词改写导致 2 条需求关键词过时（**不是内容缺失**）
+
+用本地（36 条版）门禁跑**当前**提示词文件，退出码变成 **1**：
+
+```text
+== 5. 需求逐条覆盖 ==
+  [FAIL] 22 透明玻璃（受控）  —— 未找到关键词：透明玻璃规范
+  [FAIL] 33 主流主题预设方案  —— 未找到关键词：主流主题预设
+  需求项 36 条，缺失 2 条
+== 汇总 ==
+  失败 2 项，WARN 5 项 —— 不允许交付
+```
+
+逐条核实后确认是**措辞变了、内容还在**，不是内容被删：
+
+| 需求 | 门禁关键词 | 提示词当前措辞 | 结论 |
+|---|---|---|---|
+| 22 透明玻璃（受控） | `透明玻璃规范` | 第 4.13 节标题「透明玻璃**实现**规范（受控实现，不是无边界的模糊）」 | 内容在，关键词需跟着改 |
+| 33 主流主题预设方案 | `主流主题预设` | 第 4.12 节「4.12 **全部主流预设**」 | 内容在，关键词需跟着改 |
+
+**不许用"把关键词放宽到能匹配"的方式让它变绿**（2.11-I 第 4 条：不放宽验收口径）。
+正确做法是把关键词改成提示词的**当前**措辞且保持同等具体度
+（`透明玻璃实现规范`、`主流预设`），并在 `PROGRESS.md` 记明这是**跟随提示词改写**，
+不是降低要求。
+
+### 14.6 处置（已获用户确认）
+
+- **T0**：把三个脚本按附录**逐字节**落盘 —— 直接 base64 解码写字节，
+  不经过任何编辑器（`.ps1` 因此天然带上 BOM、天然是 LF）。写完用 14.2 的方法复验：
+  字节数 + sha256 与附录声明一致。
+- 按 2.3 对附录 B 第 ⑥ 组的 `$PRUNE` 缺陷**提勘误并修掉**
+  （pattern 写成 `-path './*/.git/*'` 形式，或对每个 pattern 单独引号化），
+  同时把"找不到脚本可检查"从 `WARN` 改成 **`FAIL`** —— 避免再次静默失效。
+  这一步会让 `.sh` **主动偏离附录**，因此必须在 README 的「提示词勘误」区登记。
+- 同步更新第 ⑤ 组的两条过时关键词（14.5）。
+- 修完重跑两版门禁（`.ps1` + `.sh`），把原始输出整段替换本节的"影响"段落。
+- **在此之前，里程碑级门禁不具备完整效力**：第 ⑤ 组看不到 37/38 两条需求、
+  第 ⑥ 组是死检查。这一条已写进 `PROGRESS.md` 的 `BLOCKERS`，不许含糊过去。

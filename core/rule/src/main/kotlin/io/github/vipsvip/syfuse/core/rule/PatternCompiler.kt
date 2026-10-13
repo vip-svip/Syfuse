@@ -122,7 +122,11 @@ internal object PatternCompiler {
                 else -> sb.append(Regex.escape(c.toString()))
             }
         }
-        if (anchorEnd) sb.append("\\$")
+        // 结尾锚点是正则的 `$`。
+        // 原实现写的是 `"\\$"`（即正则里的 `\$`），而 `\$` 在 Java 与 Go 中都是
+        // "字面美元符"而非结尾锚点 —— 结果是所有 `|https://x/y|` 形态的规则
+        // 永远不可能命中。Go 侧移植时发现，已在两侧一并修正。
+        if (anchorEnd) sb.append('$')
         return sb.toString()
     }
 

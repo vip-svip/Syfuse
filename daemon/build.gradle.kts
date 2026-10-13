@@ -1,15 +1,24 @@
-// daemon —— 与守护进程 syfused 的通信层（UDS + 换行分隔 JSON + 令牌）。
+// daemon —— **Android 侧**的守护进程传输实现（`android.net.LocalSocket`）。
 //
-// 为什么单独成模块：
-//  1. 提示词 9.1 要求有这个模块；
-//  2. 协议实现必须与 Go 侧 src/internal/ipc **严格对齐**。放在独立模块里，
-//     它就没有对 UI / 数据层的依赖，可以被单独的测试直接覆盖；
-//  3. 无 root 时 App 不经过 UDS（直接以库方式加载内核），
-//     这条分支由 engine 模块处理，daemon 模块只在有 root 时被用到。
+// 为什么这个模块现在只剩一个文件：
+//
+//   协议模型、客户端、传输接口原本都在这里，但本模块是 Android library，
+//   它的**单元测试**源码集是对着 `android.jar` 编译的，而 `android.jar` 里
+//   没有 `java.net.UnixDomainSocketAddress`（实测 android-35：无此类；
+//   `android/net/LocalSocket.class` 有）。后果是"App → UDS → 守护进程"这条
+//   往返在沙箱里**连编译都过不去**，只能等真机。
+//
+//   于是协议层整体搬到纯 JVM 模块 `:daemon-protocol`，在那里用**本机真实编译出的
+//   syfused 进程**跑通往返；本模块只保留真机专属的那一个实现
+//   （`LocalSocketTransport`，依赖 `android.net.LocalSocket`）。
+//
+//   本模块因此**没有单元测试**：`LocalSocketTransport` 无法在 JVM 单测里验证
+//   （框架类会抛 "not mocked"），而这正是 PENDING-EXTERNAL.md 里登记的那一项。
+//   刻意不写"能跑但什么都没测"的假测试来把测试任务喂绿 ——
+//   Gradle 会把无测试源码的 test 任务报成 NO-SOURCE，那是诚实的状态。
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -18,16 +27,6 @@ android {
 
     defaultConfig {
         minSdk = 26
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    // 契约测试是纯 JVM 的（读 Go 源码 + 跑 Kotlin 序列化器，不碰 Android 运行时），
-    // 用 JUnit 5 跑。不显式声明 useJUnitPlatform() 的话 Gradle 会按 JUnit 4 找测试，
-    // 结果是"任务成功、0 个用例"—— 那是最危险的一种绿。
-    testOptions {
-        unitTests.all {
-            it.useJUnitPlatform()
-        }
     }
 
     compileOptions {
@@ -43,13 +42,7 @@ kotlin {
 }
 
 dependencies {
-    // 只用 domain 的错误类型契约，不依赖 data / ui
-    api(project(":domain"))
-
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.serialization.json)
-
-    testImplementation(libs.junit.jupiter)
-    testImplementation(libs.truth)
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // api：:engine / :app 需要 DaemonClient / DaemonProtocol / DaemonTransport，
+    // 让它们透传出去，避免每个消费方都要重复声明。
+    api(project(":daemon-protocol"))
 }

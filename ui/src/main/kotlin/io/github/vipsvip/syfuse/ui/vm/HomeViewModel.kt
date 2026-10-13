@@ -85,8 +85,10 @@ class HomeViewModel @Inject constructor(
         val profile = _uiState.value.currentProfileName?.let { name ->
             Profile(id = "current", name = name, routingMode = _uiState.value.routingMode)
         } ?: Profile(id = "default", name = "默认配置")
-        // 内核配置文本由 M2 的配置编译器产出；此处传入空文本，
-        // NotLinkedDataPlane 会在 start 时如实报"内核未接入"。
+        // 内核配置文本由配置编译器产出（随 M5 交付）；此处传入空文本。
+        // 当前绑定的 UdsDataPlane 会把请求转发给守护进程的 proxies.start，
+        // 守护进程如实回"未实现（计划里程碑 M3）"，界面据此展示原因 ——
+        // 不会显示"已连接"。
         return EngineConfig(profile = profile, coreConfig = "")
     }
 }

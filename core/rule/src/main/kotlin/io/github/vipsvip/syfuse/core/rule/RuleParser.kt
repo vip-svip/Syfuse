@@ -38,7 +38,7 @@ object RuleParser {
         val diags = ArrayList<RuleDiagnostic>()
         var ignored = 0
         var lineNo = 0
-        for (rawLine in text.lineSequence()) {
+        for (rawLine in linesOf(text)) {
             lineNo++
             when (val outcome = parseLine(rawLine, lineNo, sourceId, defaultKind)) {
                 is ParseOutcome.Network -> {
@@ -51,6 +51,36 @@ object RuleParser {
             }
         }
         return Report(network, cosmetic, diags, lineNo, ignored)
+    }
+
+    /**
+     * 按 CRLF / LF / CR 切分，并去掉**恰好一个**结尾空段。
+     *
+     * 不用 `lineSequence()`：它对"以换行结尾"的文本会多产出一个空行
+     * （实测 71 行的语料被算成 72 行），使"规则体检"的行数统计比
+     * 编辑器与 `wc -l` 多 1。Go 侧 `splitLines` 采用同一约定，两侧必须一致。
+     *
+     * 只去掉**一个**而不是全部：`a\n\n\n` 按 wc -l 是 3 行（`a` 加两个空行），
+     * 全部去掉会算成 1 行。
+     */
+    internal fun linesOf(text: String): List<String> {
+        val out = ArrayList<String>()
+        var start = 0
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c == '\r' || c == '\n') {
+                out.add(text.substring(start, i))
+                if (c == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++
+                i++
+                start = i
+            } else {
+                i++
+            }
+        }
+        out.add(text.substring(start))
+        if (out.isNotEmpty() && out.last().isEmpty()) out.removeAt(out.size - 1)
+        return out
     }
 
     /** 解析单行。 */
@@ -66,10 +96,15 @@ object RuleParser {
         if (line.startsWith("[") && line.endsWith("]")) return ParseOutcome.Ignored("列表头声明")
         if (line.startsWith("!") || line.startsWith(";")) return ParseOutcome.Ignored("注释")
 
-        // 以 # 开头：既可能是全局元素规则（##.ad），也可能是 # 注释，用能否解析出标记来区分
+        // 以 # 开头：既可能是全局元素规则（##.ad），也可能是 # 注释。
+        // 判据是"标记必须在行首" —— 只靠"能否解析出标记"会把
+        // `# 说明（与 ## 元素规则区分）` 这种注释误判成元素规则，
+        // 因为注释正文里出现的 `##` 会被当成标记。
         if (line.startsWith("#")) {
-            val cosmetic = CosmeticRule.parse(line, lineNo, sourceId)
-            return if (cosmetic != null) ParseOutcome.Cosmetic(cosmetic) else ParseOutcome.Ignored("注释")
+            if (CosmeticRule.startsWithMarker(line)) {
+                CosmeticRule.parse(line, lineNo, sourceId)?.let { return ParseOutcome.Cosmetic(it) }
+            }
+            return ParseOutcome.Ignored("注释")
         }
 
         // hosts / dnsmasq 专有格式

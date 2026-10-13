@@ -15,11 +15,19 @@ private class FakeDataPlane(
     override val unavailableReason: String? = null,
     private val startResult: SyfuseResult<Unit> = SyfuseResult.Success(Unit),
     private val stopResult: SyfuseResult<Unit> = SyfuseResult.Success(Unit),
+    /** 探测结果。默认与 available 一致，即"探测不会改变结论"。 */
+    private val probeResult: Boolean = available,
 ) : DataPlane {
     var startCount = 0
     var stopCount = 0
+    var probeCount = 0
     var lastConfig: EngineConfig? = null
     var countersValue: Pair<Long, Long>? = 0L to 0L
+
+    override suspend fun probeAvailability(): Boolean {
+        probeCount++
+        return probeResult
+    }
 
     override suspend fun start(config: EngineConfig): SyfuseResult<Unit> {
         startCount++
@@ -64,6 +72,29 @@ class EngineControllerTest {
         assertThat(controller.status.value.state).isEqualTo(EngineState.ERROR)
         // 关键：没有真的去调数据面
         assertThat(plane.startCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `缓存为不可用时会先探测一次再判定`() = runTest {
+        // 模拟"守护进程后来起来了"：available 还是旧的 false，但探测能成功。
+        // 没有这一步，用户就必须重启 App 才能连上 —— 那是不可接受的。
+        val plane = FakeDataPlane(available = false, probeResult = true)
+        val controller = EngineController(plane) { 3000L }
+
+        val result = controller.start(config())
+
+        assertThat(result).isInstanceOf(SyfuseResult.Success::class.java)
+        assertThat(plane.probeCount).isEqualTo(1)
+        assertThat(plane.startCount).isEqualTo(1)
+        assertThat(controller.status.value.state).isEqualTo(EngineState.RUNNING)
+    }
+
+    @Test
+    fun `已可用时不做多余探测`() = runTest {
+        val plane = FakeDataPlane(available = true)
+        EngineController(plane) { 0L }.start(config())
+
+        assertThat(plane.probeCount).isEqualTo(0)
     }
 
     @Test

@@ -132,9 +132,21 @@ object ShareLink {
     private fun parseSs(rest: String): ShareNode {
         val (body0, name) = splitFragment(rest)
 
-        // 去掉 SIP002 的插件查询串
+        // 拆出 SIP002 的查询串。
+        //
+        // ⚠️ 这里**不能**像旧实现那样把它整段丢掉。
+        // 旧实现（`val body = body0.substring(0, q)`，注释写"去掉 SIP002 的插件查询串"）
+        // 会把 obfs 与 obfs-password **静默丢弃** —— 用户明明配了流量混淆，
+        // 导入后却变成一个不混淆的节点：能连上、但特征全暴露。
+        // 这类"能跑但行为不对"的缺陷比报错更难发现，因此必须显式读出来。
+        //
+        // 两种写法都要认：
+        //   ① `?obfs=http&obfs-password=xxx`（显式参数，与 hysteria2 同源）
+        //   ② `?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-password%3Dxxx`
+        //      （SIP002 标准写法：plugin 值内部用 `;` 分隔，整体 percent-encoded）
         val q = body0.indexOf('?')
         val body = if (q >= 0) body0.substring(0, q) else body0
+        val query = if (q >= 0) parseQuery(body0.substring(q + 1)) else emptyMap()
 
         val userinfo: String
         val hostport: String
@@ -168,6 +180,9 @@ object ShareLink {
         runCatching { urlQueryUnescape(password) }.getOrNull()?.let { password = it }
 
         val (server, port) = splitHostPort(hostport, "ss")
+
+        val (obfsName, obfsPwd) = extractSsObfs(query)
+
         return ShareNode(
             name = name,
             protocolRaw = "ss",
@@ -177,7 +192,55 @@ object ShareLink {
             password = password,
             cipher = method.trim(),
             network = "tcp",
+            // ss 的混淆在传输层上是"加一层插件"，不是 ws/grpc 那种真正的传输切换，
+            // 因此 network 保持 tcp，混淆信息只走 obfs 字段（与 hysteria2 的处理一致）。
+            obfs = obfsName,
+            obfsPassword = obfsPwd,
+            // 混淆插件的 host 参数（v2ray-plugin 用）
+            host = query["host"].orEmpty(),
         )
+    }
+
+    /**
+     * 从 ss 的查询串里提取混淆参数，兼容两种写法。
+     *
+     * 返回 `(obfsName, obfsPassword)`，缺失时为空串。**不抛异常** ——
+     * 混淆参数的缺失或写法不认识不该让整个节点无法导入。
+     */
+    private fun extractSsObfs(query: Map<String, String>): Pair<String, String> {
+        // 写法①：显式参数
+        val direct = query["obfs"]
+        if (!direct.isNullOrBlank()) {
+            return direct.trim() to query["obfs-password"].orEmpty()
+        }
+
+        // 写法②：SIP002 plugin=name;key=value;...
+        // parseQuery 已经把外层 percent-encoding 解掉，这里只需按 ';' 拆。
+        val plugin = query["plugin"].orEmpty()
+        if (plugin.isBlank()) return "" to ""
+
+        val parts = plugin.split(';').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return "" to ""
+
+        // parts[0] 是插件名（obfs-local / simple-obfs / v2ray-plugin）。
+        // 该插件名**不直接**等于混淆算法名，因此只在没给具体算法时才兜底使用，
+        // 避免把 "v2ray-plugin" 当成 "v2ray" 这种混淆算法名传下去。
+        var name = ""
+        var pwd = ""
+        for (p in parts.drop(1)) {
+            val eq = p.indexOf('=')
+            if (eq < 0) continue
+            when (p.substring(0, eq).trim()) {
+                "obfs" -> name = p.substring(eq + 1).trim()
+                "obfs-password" -> pwd = p.substring(eq + 1)
+            }
+        }
+        if (name.isEmpty()) {
+            // 没有显式 obfs= 时才用插件名兜底，并去掉 "-local" 这类修饰后缀。
+            val fallback = parts[0].removeSuffix("-local").removeSuffix("-plugin")
+            if (fallback.isNotEmpty()) name = fallback
+        }
+        return name to pwd
     }
 
     // -----------------------------------------------------------------------

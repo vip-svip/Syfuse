@@ -208,9 +208,21 @@ if [ -f tools/scan_secrets.py ]; then
 else
   fail "缺少 tools/scan_secrets.py"
 fi
-for f in .gitignore local.properties; do
-  [ -f "$f" ] && pass "$f 存在" || fail "$f 缺失"
-done
+# 注意断言方向：local.properties 是**本机私有**文件（含 SDK 绝对路径），
+# 被 .gitignore 排除，因此**干净克隆里它不该存在**。
+# 早期版本断言"它必须存在"，在 CI 的干净 checkout 上必然 FAIL ——
+# 那是断言写反了，不是环境问题。（CI 第 10 次运行暴露的）
+[ -f .gitignore ] && pass ".gitignore 存在" || fail ".gitignore 缺失"
+if git ls-files --error-unmatch local.properties >/dev/null 2>&1; then
+  fail "local.properties 被 git 跟踪 —— 它会泄漏本机 SDK 绝对路径"
+else
+  pass "local.properties 未被 git 跟踪"
+fi
+if git check-ignore -q local.properties 2>/dev/null; then
+  pass "local.properties 被 .gitignore 排除"
+else
+  fail "local.properties 未被 .gitignore 排除"
+fi
 grep -qE '^\s*\*\.jks|^\s*\*\.keystore|^\s*local\.properties' .gitignore 2>/dev/null \
   && pass ".gitignore 已排除密钥与 local.properties" \
   || fail ".gitignore 未排除密钥文件"

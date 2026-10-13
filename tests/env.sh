@@ -37,7 +37,14 @@ export PATH="$JAVA_HOME/bin:$PATH"
 # ---------- Gradle ----------
 SYFUSE_GRADLE="${SYFUSE_GRADLE:-}"
 if [ -z "$SYFUSE_GRADLE" ]; then
-  if [ -x "$SYFUSE_ROOT/gradlew" ]; then
+  # 仓库自带的 wrapper 优先。
+  #
+  # **不要用 `-x` 判定**：gradlew 的可执行位依赖 git 存储的文件模式，
+  # 而 Windows 上无法设置该位 —— 在 Windows 提交、Linux 克隆时
+  # gradlew 会是 644，`-x` 判定失败，于是脚本去别处找 Gradle 并报"找不到"。
+  # 实测这导致 CI 的单元测试 job 直接失败（exit 2）。
+  # 改用 `-f` 判定存在性，并在调用时用 `sh` 兜底（见 syfuse_gradle）。
+  if [ -f "$SYFUSE_ROOT/gradlew" ]; then
     SYFUSE_GRADLE="$SYFUSE_ROOT/gradlew"
   else
     for candidate in "$TOOLCHAIN"/gradle-*/bin/gradle ; do
@@ -62,7 +69,12 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 # 需要 Gradle 的脚本调用它；不需要的（纯静态检查）不调用，从而在无 SDK 环境也能跑。
 syfuse_gradle() {
   [ -n "$SYFUSE_GRADLE" ] || syfuse_die "找不到 Gradle。设置 SYFUSE_GRADLE 或把 Gradle 放到 $TOOLCHAIN/gradle-*/bin/gradle"
-  ( cd "$SYFUSE_ROOT" && "$SYFUSE_GRADLE" "$@" )
+  if [ -x "$SYFUSE_GRADLE" ]; then
+    ( cd "$SYFUSE_ROOT" && "$SYFUSE_GRADLE" "$@" )
+  else
+    # 无执行位时用 sh 调用（跨平台克隆的常见情形）
+    ( cd "$SYFUSE_ROOT" && sh "$SYFUSE_GRADLE" "$@" )
+  fi
 }
 
 # adb 定位。设备类脚本用它。

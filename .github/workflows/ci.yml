@@ -18,6 +18,12 @@ concurrency:
 
 env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3g"
+  # GitHub 的 ubuntu-latest runner **预装** Android SDK。
+  # 早期版本用 android-actions/setup-android@v3 安装，实测该步骤在 runner 上
+  # 稳定失败（连续 5 次 CI 全红都停在这一步），且它是第三方 action。
+  # 改为直接用预装 SDK：少一个第三方依赖，构建更可复现。
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -42,12 +48,20 @@ jobs:
 
       # run_module_checks.sh 里的 Gradle 相关断言在无 SDK 时会被跳过，
       # 因此这里先装 SDK，保证它检查的是完整环境。
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 安装 SDK 组件
+      - name: 校验预装 Android SDK
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME" || { echo "::error::预装 SDK 不存在，runner 镜像可能变了"; exit 1; }
+          # 只补装缺失组件，不做全量安装（更快也更稳）
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR="$(command -v sdkmanager || true)"
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null 2>&1 || true
+          fi
+          ls -1 "$ANDROID_HOME/platforms" 2>/dev/null | head -5
+          ls -1 "$ANDROID_HOME/build-tools" 2>/dev/null | head -5
 
       - name: 红队静态检查（R1–R6）
         run: bash tests/run_module_checks.sh
@@ -107,11 +121,20 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 安装 SDK 组件
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: 校验预装 Android SDK
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME" || { echo "::error::预装 SDK 不存在，runner 镜像可能变了"; exit 1; }
+          # 只补装缺失组件，不做全量安装（更快也更稳）
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR="$(command -v sdkmanager || true)"
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null 2>&1 || true
+          fi
+          ls -1 "$ANDROID_HOME/platforms" 2>/dev/null | head -5
+          ls -1 "$ANDROID_HOME/build-tools" 2>/dev/null | head -5
 
       - name: 单元测试
         run: bash tests/run_unit.sh
@@ -148,11 +171,20 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 安装 SDK 组件
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: 校验预装 Android SDK
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME" || { echo "::error::预装 SDK 不存在，runner 镜像可能变了"; exit 1; }
+          # 只补装缺失组件，不做全量安装（更快也更稳）
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR="$(command -v sdkmanager || true)"
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null 2>&1 || true
+          fi
+          ls -1 "$ANDROID_HOME/platforms" 2>/dev/null | head -5
+          ls -1 "$ANDROID_HOME/build-tools" 2>/dev/null | head -5
 
       - name: 构建 debug APK
         run: ./gradlew :app:assembleDebug --console=plain

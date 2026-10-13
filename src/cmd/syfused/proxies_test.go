@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 本文件守住 `proxies.*` 控制方法的**行为**。
@@ -32,6 +34,10 @@ func writeConfigPack(t *testing.T, configJSON, confExtra string) Paths {
 	return p
 }
 
+// twoNodeConfig 是一份**能真正启动**的规则模式配置：
+// 两个 ss 节点 + 一条规则。规则非空是硬要求 —— 规则模式给空规则集
+// 会让所有流量落到默认动作，用户以为分流生效了其实没有（见
+// syfuse.newRuleRouter 的拒绝逻辑）。
 const twoNodeConfig = `{
   "schemaVersion": 1,
   "routingMode": "rule",
@@ -39,13 +45,20 @@ const twoNodeConfig = `{
     "ss://YWVzLTI1Ni1nY206cHc@127.0.0.1:8388#节点B",
     "ss://YWVzLTI1Ni1nY206cHc@127.0.0.1:8389#节点A"
   ],
+  "rules": "||example.com^\n",
   "logLevel": "info"
 }`
 
-func TestProxies_StartReportsNotLinkedNotRunning(t *testing.T) {
-	// 核心诚实性断言：内核宿主未接通时，start **不得**报 running。
+// TestProxies_StartBuildsRealTunnel 核心断言（M3 之后的真相）：
+// start 必须建出真隧道并报 running + socksAddr。
+//
+// 历史对照：这里曾经断言 `state == "not_linked"`（内核宿主未接通）。
+// 现在隧道已实现，那条断言反映的是**过去**的事实，留着就是假绿 ——
+// 所以它被替换成"真的在跑"而不是被删掉了事。
+func TestProxies_StartBuildsRealTunnel(t *testing.T) {
 	p := writeConfigPack(t, twoNodeConfig, "")
 	pm := newProxyManager()
+	t.Cleanup(func() { _, _ = handleProxiesStop(pm)(nil) })
 
 	raw, err := handleProxiesStart(pm, p)(nil)
 	if err != nil {
@@ -53,15 +66,26 @@ func TestProxies_StartReportsNotLinkedNotRunning(t *testing.T) {
 	}
 	m := raw.(map[string]any)
 
-	if m["state"] != "not_linked" {
-		t.Errorf("内核未接通时 state 应为 not_linked，得到 %v", m["state"])
+	if m["state"] != "running" {
+		t.Errorf("隧道建成后 state 应为 running，得到 %v（error=%v）", m["state"], m["error"])
 	}
-	if m["running"] != false {
-		t.Errorf("内核未接通时 running 必须为 false，得到 %v", m["running"])
+	if m["running"] != true {
+		t.Errorf("running 应为 true，得到 %v", m["running"])
 	}
-	if m["kernelLinked"] != false {
-		t.Errorf("kernelLinked 应为 false，得到 %v", m["kernelLinked"])
+	if m["kernelLinked"] != true {
+		t.Errorf("kernelLinked 应为 true，得到 %v", m["kernelLinked"])
 	}
+	// socksAddr 是上层（TUN/iptables）唯一知道"流量送哪去"的依据
+	addr, _ := m["socksAddr"].(string)
+	if addr == "" {
+		t.Fatalf("必须报回 socksAddr，否则上层无处送流量")
+	}
+	// 端口可能是系统分配的：真的能连上才算数。
+	c, dialErr := net.DialTimeout("tcp", addr, 3*time.Second)
+	if dialErr != nil {
+		t.Fatalf("socksAddr %s 连不上: %v", addr, dialErr)
+	}
+	c.Close()
 	// 节点解析是真的做了，所以数量必须对
 	if m["nodeCount"] != 2 {
 		t.Errorf("节点数应为 2，得到 %v", m["nodeCount"])
@@ -180,9 +204,55 @@ func TestProxies_StopResetsRunning(t *testing.T) {
 	}
 }
 
-func TestProxies_ReloadDoesNotTurnStoppedIntoRunning(t *testing.T) {
-	// reload 只换配置，不改变"运行与否"。
-	// 若它顺手把 running 置 true，一次配置刷新就会把 UI 变成"已连接"。
+// TestProxies_ReloadRebuildsTunnelWhenRunning 运行中 reload 必须真的换隧道：
+// 新配置的监听地址要生效（否则用户改了 listen 却连到旧端口）。
+func TestProxies_ReloadRebuildsTunnelWhenRunning(t *testing.T) {
+	p := writeConfigPack(t, twoNodeConfig, "")
+	pm := newProxyManager()
+	t.Cleanup(func() { _, _ = handleProxiesStop(pm)(nil) })
+
+	first := mustStart(t, pm, p)
+	addr1 := first["socksAddr"].(string)
+
+	// 换一份配置：同样两个节点，但规则不同（用来证明配置真的被换了）。
+	reloaded := `{
+  "schemaVersion": 1,
+  "routingMode": "rule",
+  "nodes": [
+    "ss://YWVzLTI1Ni1nY206cHc@127.0.0.1:8388#节点B",
+    "ss://YWVzLTI1Ni1nY206cHc@127.0.0.1:8389#节点A"
+  ],
+  "rules": "||changed.example^\n",
+  "logLevel": "info"
+}`
+	if err := os.WriteFile(filepath.Join(p.DataDir, "config.json"), []byte(reloaded), 0o600); err != nil {
+		t.Fatalf("写配置包: %v", err)
+	}
+	raw, err := handleProxiesReload(pm, p)(nil)
+	if err != nil {
+		t.Fatalf("reload 出错: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["running"] != true {
+		t.Errorf("运行中 reload 后应保持 running，得到 %v", m["running"])
+	}
+	if m["reloaded"] != true {
+		t.Errorf("应答应带 reloaded=true")
+	}
+	addr2, _ := m["socksAddr"].(string)
+	if addr2 == "" {
+		t.Fatalf("运行中 reload 必须报回 socksAddr")
+	}
+	// 旧隧道必须已经关掉：留着就是一个没人知道的僵尸监听端。
+	if c, dialErr := net.DialTimeout("tcp", addr1, time.Second); dialErr == nil {
+		c.Close()
+		t.Errorf("reload 后旧地址 %s 仍在监听 —— 旧隧道没有关闭", addr1)
+	}
+}
+
+// TestProxies_ReloadWhenStoppedDoesNotCreateTunnel 未运行时 reload
+// **不得**建隧道：那会造成"有监听端在收流量、UI 显示未连接"的分裂。
+func TestProxies_ReloadWhenStoppedDoesNotCreateTunnel(t *testing.T) {
 	p := writeConfigPack(t, twoNodeConfig, "")
 	pm := newProxyManager()
 
@@ -194,12 +264,30 @@ func TestProxies_ReloadDoesNotTurnStoppedIntoRunning(t *testing.T) {
 	if m["running"] != false {
 		t.Errorf("未运行时的 reload 不得把 running 置 true，得到 %v", m["running"])
 	}
-	if m["reloaded"] != true {
-		t.Errorf("应答应带 reloaded=true，得到 %v", m["reloaded"])
+	if m["state"] != "stopped" {
+		t.Errorf("未运行时 reload 后 state 应为 stopped，得到 %v", m["state"])
 	}
+	if _, ok := m["socksAddr"]; ok {
+		t.Errorf("未运行时 reload 不得报 socksAddr（那意味着起了隧道）")
+	}
+	// 节点表必须真的刷新了 —— 否则 reload 是空操作。
 	if m["nodeCount"] != 2 {
 		t.Errorf("reload 应重新解析出 2 个节点，得到 %v", m["nodeCount"])
 	}
+}
+
+// mustStart 走一次 start 并断言成功，返回应答 map。
+func mustStart(t *testing.T, pm *proxyManager, p Paths) map[string]any {
+	t.Helper()
+	raw, err := handleProxiesStart(pm, p)(nil)
+	if err != nil {
+		t.Fatalf("start 返回错误: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["state"] != "running" {
+		t.Fatalf("start 后应为 running，得到 %v（error=%v）", m["state"], m["error"])
+	}
+	return m
 }
 
 func TestProxies_URLTestRejectsUnknownNode(t *testing.T) {

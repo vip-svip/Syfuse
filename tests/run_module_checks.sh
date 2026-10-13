@@ -156,10 +156,18 @@ head2 "测试用例名不得含 Windows 非法文件名字符"
 # 一旦出现，编译器会抛 `InvalidPathException: Illegal char <">` ——
 # 一个完全看不出与"命名"有关的内部编译器错误（实测踩过，排查花了不少时间）。
 # Linux/macOS 上则完全正常，于是它只在 Windows 上炸：典型的平台相关坑。
-bad_names=$(grep -rn 'fun `[^`]*["*?<>|:][^`]*`' --include=*.kt \
+#
+# **`.` 也在禁用之列**（2026-10-13 追加）。实测把用例名写成
+# `proxies.start 真的建立隧道...`，Kotlin 编译直接失败：
+#   `Name contains illegal characters: ..`
+# 反引号名字里的点会被带进生成的类文件名，Windows 的文件名路径段不允许
+# 出现点号序列。同样只在 Windows 上炸（Linux/macOS 编译通过）。
+# 注意：这里的字符类要写在方括号里**不转义**点号之外的字符，
+# `.` 放在字符类内是字面量，无需转义。
+bad_names=$(grep -rn 'fun `[^`]*["*?<>|:.][^`]*`' --include=*.kt \
   app ui core domain data engine daemon daemon-protocol privileged hook 2>/dev/null || true)
 if [ -z "$bad_names" ]; then
-  pass "全部 Kotlin 用例名不含 Windows 非法文件名字符"
+  pass "全部 Kotlin 用例名不含 Windows 非法文件名字符（含 . ）"
 else
   fail "以下用例名会让 Windows 上的编译直接失败："; echo "$bad_names" | sed 's/^/    /'
 fi

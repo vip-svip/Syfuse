@@ -367,8 +367,8 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("rules.build", handleRulesBuild(paths))
 
 	// 代理控制：真实实现（配置校验 + 节点解析 + 选择 + TCP 可达性测速）。
-	// 唯一仍属"未接通"的是**隧道本身**（内核宿主），它由 Engine.Start 如实上报
-	// not_linked，而不是由本层假装成功。
+	// proxies.* 全部由 proxyManager 驱动真实引擎：start 会建立本地
+	// SOCKS5 入站隧道并在应答里报回实际监听地址（socksAddr）。
 	pm := newProxyManager()
 	srv.Handle("proxies", handleProxiesStatus(pm))
 	srv.Handle("proxies.status", handleProxiesStatus(pm))

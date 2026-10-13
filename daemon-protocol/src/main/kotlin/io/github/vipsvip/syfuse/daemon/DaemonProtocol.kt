@@ -56,24 +56,25 @@ object DaemonProtocol {
         // tests/expect.tsv 作跨语言预言机）。规则**来源管理**（订阅下载、
         // 自动更新）与编译产物落盘仍属 M5/M10。
         "rules.test", "rules.syntax", "rules.stats", "rules.build",
+        // 代理控制面：守护进程侧 proxyManager 驱动真实引擎。
+        // start 会建立本地 SOCKS5 入站隧道，应答里带 socksAddr
+        // （实际监听地址，端口可能是系统分配的）。
+        "proxies", "proxies.status",
+        "proxies.start", "proxies.stop",
+        "proxies.reload", "proxies.select", "proxies.urlTest",
     )
 
     /**
      * 已注册但**尚未实现**的方法 → 计划里程碑。UI 据此把入口标为"实验性/不可用"。
      *
-     * `proxies.start` / `proxies.stop` 是数据面（UdsDataPlane）转发的目标：
-     * 它们被**注册**而不是留空，是为了让 App 拿到
-     * "方法 proxies.start 尚未实现（计划里程碑 M3）"这种可展示的原因，
-     * 而不是 `unknown_method` —— 后者会被 [daemonErrorHint] 翻译成
-     * "模块不认识这个请求，可能是版本不匹配"，把用户引向完全错误的方向。
+     * 这张表与 [IMPLEMENTED_METHODS] 由 [DaemonProtocolContractTest] 与 Go 侧
+     * `main.go` 的注册清单逐项对齐（Go 源码是唯一事实来源）—— 某天 Go 侧
+     * 实现了某个方法而这里没同步，那条契约测试会红。
+     *
+     * `proxies.*` 曾经整组在这张表里（M3 隧道未实现）。现在隧道已实现，
+     * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
     val PENDING_METHODS: Map<String, String> = mapOf(
-        "proxies" to "M3/M4",
-        "proxies.start" to "M3",
-        "proxies.stop" to "M3",
-        "proxies.reload" to "M5",
-        "proxies.urlTest" to "M4",
-        "proxies.select" to "M4",
         "connections" to "M9",
         "traffic" to "M9",
         "filter.stats" to "M10",

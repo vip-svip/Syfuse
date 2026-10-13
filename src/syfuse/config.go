@@ -42,6 +42,14 @@ type Config struct {
 
 	// AllowLAN 是否允许局域网设备接入（用于局域网面板）
 	AllowLAN bool `json:"allowLan,omitempty"`
+
+	// Listen 是本地入站监听地址，形如 `127.0.0.1:1080` 或 `unix:/path/to.sock`。
+	//
+	// 默认回环 + 随机端口（`127.0.0.1:0`）：本产品的入站只服务本机
+	// （与 TUN/iptables 重定向配合）。对外开放是另一个决定，必须显式配置，
+	// 不能由默认值顺手放开。端口留 0 让系统分配，避免"1080 被占用"这种
+	// 与业务无关的失败，实际端口由 Engine.SocksAddr() 报给上层。
+	Listen string `json:"listen,omitempty"`
 }
 
 // DNSConfig 是 DNS 相关配置。
@@ -140,8 +148,18 @@ func (c *Config) normalize() error {
 
 	// 局域网开放是危险项：显式要求调用方明确设置，不允许"顺手打开"。
 	// 这里不拒绝，只是保证它出现在配置里时是有意的。
+
+	// 入站监听地址：未配置时用回环 + 随机端口。
+	if strings.TrimSpace(c.Listen) == "" {
+		c.Listen = DefaultListenAddr
+	}
 	return nil
 }
+
+// DefaultListenAddr 是本地入站的默认监听地址。
+//
+// 回环 + 端口 0（系统分配）：见 [Config.Listen] 的说明。
+const DefaultListenAddr = "127.0.0.1:0"
 
 // String 返回不含敏感信息的配置摘要，用于日志与诊断。
 func (c *Config) String() string {

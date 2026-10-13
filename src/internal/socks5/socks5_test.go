@@ -482,11 +482,11 @@ func TestReadAddrRoundTrip(t *testing.T) {
 }
 
 func TestSplitAddr(t *testing.T) {
-	if n, a := splitAddr("unix:/tmp/x.sock"); n != "unix" || a != "/tmp/x.sock" {
-		t.Fatalf("splitAddr(unix) = %q, %q", n, a)
+	if n, a := SplitAddr("unix:/tmp/x.sock"); n != "unix" || a != "/tmp/x.sock" {
+		t.Fatalf("SplitAddr(unix) = %q, %q", n, a)
 	}
-	if n, a := splitAddr("127.0.0.1:1080"); n != "tcp" || a != "127.0.0.1:1080" {
-		t.Fatalf("splitAddr(tcp) = %q, %q", n, a)
+	if n, a := SplitAddr("127.0.0.1:1080"); n != "tcp" || a != "127.0.0.1:1080" {
+		t.Fatalf("SplitAddr(tcp) = %q, %q", n, a)
 	}
 }
 

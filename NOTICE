@@ -64,27 +64,57 @@ Copyright (C) 2026 vip-svip
 | Gradle | 8.11.1 | Apache-2.0 |
 | Go（内核构建） | 1.23.4 | BSD-3-Clause |
 
-### 2.3 内核候选（许可已实证）
+### 2.3 代理内核
 
-代理内核选定 **sing-box**（`SagerNet/sing-box`）。
+> **本节已于 2026-10-13 按代码现状校正。** 原文写作"内核选定 sing-box"，
+> 那是**选型阶段的结论**，不是代码现状：全仓库检索 `sing-box` 只命中
+> 6 处注释（架构说明），没有任何一个构建文件、依赖声明或链接行为它。
+> 本文件的第 4 条要求"只列实际存在的东西"，所以必须改。
 
-| 项 | 实测值 | 核实方式 |
-|---|---|---|
-| 许可证 | **GPL-3.0-or-later** | 读取仓库 `LICENSE` 原文：*"GNU General Public License … either version 3 of the License, or (at your option) any later version"* |
-| 主语言 | Go（5.63 MB） | GitHub Languages API |
-| 默认分支 | **`testing`**（不是 `main`） | GitHub Repos API |
-| 仓库体积 | 29511 KB | GitHub Repos API |
+| 项 | 现状 |
+|---|---|
+| 实际随产物分发的内核 | **本仓库自研 Go 守护进程** `syfused`（`src/cmd/syfused/`、`src/internal/…`、`src/syfuse/…`） |
+| 第三方代理内核依赖 | **无**（`src/go.mod` 零 `require`、无 `go.sum`，由 `tests/run_kernel.sh` 把关） |
+| sing-box（`SagerNet/sing-box`） | 许可证已实证为 **GPL-3.0-or-later**（读仓库 `LICENSE` 原文，不是 API 摘要）；**未采用**，当前仅作为架构参考出现在注释里 |
+| mihomo（`MetaCubeX/mihomo`） | **未采用**。提示词 9.2/18.3 说它是代理内核，实测该仓库当前是游戏数据解析器（MIT，Python），与本项目无关 |
 
-> **为什么在这里写这么细**：GitHub 的 `license.spdx_id` 对 sing-box 返回
-> `NOASSERTION`（因为它的 LICENSE 文件只有 17 行的短声明，不是 GPL 全文）。
-> 如果只看 API 字段就会以为"许可不明"。**许可推导必须读原文，不能读摘要。**
+> sing-box 的许可证实证过程保留在下面的记录里，因为它是"读原文而不是读
+> API 摘要"的一个实例：GitHub `license.spdx_id` 对 sing-box 返回
+> `NOASSERTION`（其 LICENSE 是 17 行短声明，不是 GPL 全文），
+> 只看 API 字段会误判成"许可不明"。
 
-**未采用 mihomo**：提示词 9.2/18.3 引用的 `MetaCubeX/mihomo` 经实测
-**不是代理内核** —— 该仓库当前是崩坏星穹铁道的游戏数据解析器（MIT，Python）。
-详见 README 的「内核选型与许可核实」勘误说明。
+自研内核的组成（都在 `src/` 下，零第三方依赖）：
+`socks5` 入站、`outbound` 出站（direct / socks5 / http / trojan / shadowsocks）、
+`dataplane` 分流、`dns`、`rule` 规则引擎、`ipc` 与 App 的通信。
 
-内核实际接入后，其传递依赖清单会在此补齐（含版本与许可证）。
-**不写"预计会用到"这种无法核对的条目。**
+
+### 2.4 内置移植源码（随产物分发的 vendored 代码）
+
+这些不是"依赖"，是把**上游源码原样搬进本仓库**的代码。它们随产物一起分发，
+因此许可证声明必须保留。
+
+| 组件 | 上游 | 版本 | 许可证 | 位置 | 移植时改了什么 |
+|---|---|---|---|---|---|
+| `chacha20poly1305` | `golang.org/x/crypto` | **v0.58.0** | BSD-3-Clause | `src/internal/third_party/chacha20poly1305/` | 仅两处：import 路径改写为仓库内路径；删除全部汇编构建标签（纯 Go 分支，汇编路径未启用） |
+
+**为什么必须搬进来**：RFC 8439 的 ChaCha20-Poly1305 **不在 Go 标准库里**
+（`crypto/chacha20poly1305` 这个路径不存在，实测 go1.26.9 无此目录）。
+它只存在于 `golang.org/x/crypto`，而本项目的硬约束是内核**零第三方依赖**
+——`src/go.mod` 不允许出现 `require`，也不允许有 `go.sum`。所以只有移植这一条路。
+
+**为什么可以直接搬**：x/crypto 是 BSD-3-Clause，与 GPL-3.0-or-later 兼容。
+上游许可证全文见 `src/internal/third_party/chacha20poly1305/LICENSE.x-crypto`。
+
+**移植正确性如何证明**：不靠"看起来对"。
+`src/internal/third_party/chacha20poly1305/chacha20poly1305/vendor_vectors_test.go`
+用上游自带的 RFC 8439 / XChaCha20 官方向量表，对每个向量同时断言三件事：
+Seal 输出与官方密文逐字节一致、Open 能还原、以及篡改 AAD/nonce/密文的
+**每一个 bit** 都必须认证失败。内核门禁 `tests/run_kernel.sh` 会跑它。
+
+**为什么特别要盯这条路径**：汇编被剥掉之后，实际执行的全部是纯 Go 分支，
+而上游 CI 默认跑汇编路径。也就是这个 vendored 副本**比上游更少被覆盖**，
+更需要在这里钉死。
+
 
 ---
 

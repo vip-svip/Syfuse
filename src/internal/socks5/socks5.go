@@ -124,7 +124,7 @@ func New() *Server {
 // 监听单位是调用方的选择 —— 守护进程默认用 UDS（不暴露 TCP 端口，
 // 同机其他应用无法蹭代理）。
 func (s *Server) ListenAndServe(addr string) error {
-	network, address := splitAddr(addr)
+	network, address := SplitAddr(addr)
 	ln, err := net.Listen(network, address)
 	if err != nil {
 		return err
@@ -502,8 +502,20 @@ func (s *Server) writeReply(w io.Writer, rep byte, boundAddr net.Addr) error {
 	return err
 }
 
+// ErrPolicyRejected 表示"拨号被策略拒绝"（路由规则命中 reject）。
+//
+// 由 dataplane 包装返回；本包据此回 RepNotAllowedByRuleset。
+// 之所以放在入站侧：**客户端要能区分"被拦了"与"连不上"**，
+// 笼统回 general failure 会让排障变成猜。
+var ErrPolicyRejected = errors.New("socks5: 拨号被策略拒绝")
+
 // classifyDialError 把拨号错误映射为 SOCKS5 应答码。
 func classifyDialError(err error) byte {
+	// 策略拒绝优先于网络类判断：被拦的连接可能压根没发起拨号，
+	// 错误里没有 OpError，靠后面几条规则会落回 general failure。
+	if errors.Is(err, ErrPolicyRejected) {
+		return RepNotAllowedByRuleset
+	}
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		if opErr.Op == "dial" {
@@ -531,8 +543,12 @@ func containsAny(s string, subs ...string) bool {
 	return false
 }
 
-// splitAddr 把 "unix:/path" 与 "host:port" 统一成 (network, address)。
-func splitAddr(addr string) (string, string) {
+// SplitAddr 把 "unix:/path" 与 "host:port" 统一成 (network, address)。
+//
+// 导出它是因为 dataplane 需要自己拿 listener（它要在 Serve 之前
+// 就知道监听是否成功、并对外报告实际地址）。让 dataplane 再抄一份
+// "unix: 前缀"的解析是重复真相 —— 那种重复迟早会在某一侧被改漏。
+func SplitAddr(addr string) (string, string) {
 	const prefix = "unix:"
 	if len(addr) > len(prefix) && addr[:len(prefix)] == prefix {
 		return "unix", addr[len(prefix):]

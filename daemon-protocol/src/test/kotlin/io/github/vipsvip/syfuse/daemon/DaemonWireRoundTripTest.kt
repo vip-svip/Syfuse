@@ -38,9 +38,11 @@ import java.util.concurrent.TimeUnit
  *  1. 本测试**不能**证明 `android.net.LocalSocket` 在真机上可用 ——
  *     那一步仍然必须真机验证（见 PENDING-EXTERNAL.md）。
  *     它证明的是"协议两侧一致"，不是"平台 API 可用"。这两件事被刻意解耦。
- *  2. `proxies.start` 目前是"已注册但未实现"，所以这里断言的是
- *     **如实失败**（原因来自守护进程），而不是"隧道已连接"。
- *     把"能如实失败"当成"隧道可用"是绝对不允许的。
+ *  2. `proxies.start` 已实现（守护进程侧建真隧道），因此这里断言的是
+ *     **真实启动**：应答带 state=running 与 socksAddr，且 stop 之后
+ *     state=stopped。把"能如实失败"当成"隧道可用"是绝对不允许的；
+ *     反过来，把"看起来启动成功"当成"流量真的在跑"同样不允许 ——
+ *     字节是否真的过隧道由 Go 侧 `syfuse` 包的端到端用例守着。
  *  3. 本测试用的是本机 `go build` 出的宿主平台二进制，不是 Android 上的
  *     arm64 产物。交叉编译产物能否在设备上跑，属真机验证范围。
  *
@@ -288,22 +290,45 @@ class DaemonWireRoundTripTest {
     // "InvalidPathException: Illegal char <"> 这种看不出跟命名有关的内部编译器错误。
     // 这里用中文书名号，既表达了"引用"的意思，又不触发文件名限制。
     @Test
-    fun `隧道未实现时拿到的是可展示的原因而不是「版本不匹配」`() = runBlocking {
-        // UdsDataPlane.start 转发到 proxies.start；后者被**注册**为待实现方法。
-        val error = fail(
+    fun `proxies_start 真的建立隧道并报回监听地址`() = runBlocking {
+        // UdsDataPlane.start 转发到 proxies.start；后者驱动真实引擎。
+        // 直连模式：不需要节点，守护进程内就能起一条 SOCKS5 入站隧道。
+        //
+        // configJson 用**正确**的字段名（守护进程侧 proxyStartParams.ConfigJSON）。
+        // 历史上这里写的是 coreConfig，于是参数被当成没传，守护进程转而去读
+        // 磁盘上的 syfuse.conf，测试环境里没有那个文件 —— 一个字段名拼错
+        // 把"启动隧道"测成了"读配置失败"。
+        val started = ok(
             client.call(
                 "proxies.start",
                 buildJsonObject {
                     put("profileId", "p")
-                    put("coreConfig", "{}")
+                    put("configJson", """{"schemaVersion":1,"routingMode":"direct"}""")
                 },
             ),
         )
-        assertThat(error.technical).contains("proxies.start")
-        assertThat(error.technical).contains("未实现")
-        assertThat(error.technical).contains("M3")
-        assertThat(error.technical).doesNotContain(DaemonErrorCode.UNKNOWN_METHOD)
-        assertThat(error.userMessage).isNotEmpty()
+        assertThat(started["state"]?.jsonPrimitive?.content).isEqualTo("running")
+        assertThat(started["running"]?.jsonPrimitive?.content).isEqualTo("true")
+        val socksAddr = started["socksAddr"]?.jsonPrimitive?.content
+        assertThat(socksAddr).isNotEmpty()
+        // 端口可能是系统分配的：能用它连上才是真的在听。连不上会抛异常，
+        // 测试直接红 —— 不留"看起来返回了地址"这种半真半假的结论。
+        java.net.Socket().use {
+            it.connect(java.net.InetSocketAddress("127.0.0.1", socksAddr!!.substringAfterLast(':').toInt()), 2000)
+        }
+
+        val stopped = ok(client.call("proxies.stop", null))
+        assertThat(stopped["state"]?.jsonPrimitive?.content).isEqualTo("stopped")
+        assertThat(stopped["running"]?.jsonPrimitive?.content).isEqualTo("false")
+    }
+
+    @Test
+    fun `proxies_status_未启动时不谎报运行中`() = runBlocking {
+        // start 之前（或 stop 之后）必须是 stopped/running=false，
+        // 且没有 socksAddr —— 否则 UI 会显示"已连接"却无处送流量。
+        val st = ok(client.call("proxies.status", null))
+        assertThat(st["running"]?.jsonPrimitive?.content).isEqualTo("false")
+        assertThat(st["socksAddr"]).isNull()
     }
 
     @Test

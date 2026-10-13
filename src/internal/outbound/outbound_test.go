@@ -137,6 +137,15 @@ func readN(c net.Conn, n int) ([]byte, error) {
 func TestDirectDialerSucceeds(t *testing.T) {
 	srv := newFakeServer(t, func(c net.Conn) error {
 		c.Write([]byte("PONG"))
+		// 写完必须把客户端的输入排空再返回。
+		//
+		// Windows 的 TCP 语义：socket 关闭时若接收缓冲区里还有数据，
+		// 内核发 RST 而不是 FIN。RST 一到，本地已发出但还在途的
+		// "PONG" 直接被丢弃，客户端读到的是
+		// "An existing connection was forcibly closed"。
+		// 直连的断言当然是读回显 —— 不 drain 就会偶发失败，
+		// 而且失败只出现在 Windows 上，Linux/macOS 永远绿。
+		io.Copy(io.Discard, c)
 		return nil
 	})
 	host, port := srv.hostPort(t)
@@ -599,7 +608,9 @@ func TestNewDialerRoutesByProtocol(t *testing.T) {
 		{"socks5", "socks5", false},
 		{"http", "http", false},
 		{"trojan", "trojan", false},
-		{"vmess", "", true}, // 尚未支持：必须明确报错，不能回落成直连
+		{"ss", "ss", false},
+		{"shadowsocks", "ss", false}, // 同一协议的完整拼写
+		{"vmess", "", true},          // 尚未支持：必须明确报错，不能回落成直连
 		{"vless", "", true},
 	}
 	for _, tc := range cases {

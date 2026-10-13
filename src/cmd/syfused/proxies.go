@@ -42,9 +42,9 @@ type proxyManager struct {
 
 	// engine 是被驱动的真实引擎实例。
 	//
-	// 为 nil 表示尚未创建。当前内核宿主（AAR）已可构建，但守护进程
-	// 进程内还没加载它 —— 此时 start 会把状态如实标成 not_linked 并给出原因，
-	// 而不是假装 running。
+	// 为 nil 表示尚未创建（还没启动过）。一旦 start 被调用，它就是
+	// 真实的引擎：自带 SOCKS5 入站、路由决策与出站拨号器。
+	// start 失败时状态如实置为 failed，**不会**假装 running。
 	engine *syfuse.Engine
 }
 
@@ -163,9 +163,10 @@ func (pm *proxyManager) start(configJSON, profileID, nodeName string) (any, erro
 		pm.engine = syfuse.NewEngine()
 	}
 
-	// Start 在隧道未实现时会返回错误，但它**已经**完成了配置校验与节点解析。
-	// 因此这里读状态而不是把错误直接抛出去 —— 抛出去会让"配置校验失败"
-	// 与"内核未接通"混成同一个错误，调用方无法区分这两件事。
+	// Start 成功时状态为 running，应答里带 socksAddr（本地入站地址）。
+	// 失败时（配置坏、节点协议没有拨号器、端口被占用）状态为 failed，
+	// 并把错误写进应答的 error 字段 —— 调用方必须能区分
+	// "启动失败"与"以为启动成功了"。
 	startErr := pm.engine.Start(configJSON)
 
 	st := pm.engine.State()
@@ -190,14 +191,17 @@ func (pm *proxyManager) start(configJSON, profileID, nodeName string) (any, erro
 		"nodeCount":    pm.engine.NodeCount(),
 		"kernelLinked": isLinked(st),
 	}
-	// 只有在**确实失败**（而非"未接通"）时才把错误当成失败暴露。
+	// socksAddr 是**真实存在**的本地入站地址：TUN/iptables 侧必须知道
+	// 把流量送到哪里。端口可能是系统分配的，所以只能由引擎报回来，
+	// 不能用配置里的字面量 —— 拿字面量去连会连到一个没人监听的端口。
+	if addr := pm.engine.SocksAddr(); addr != "" {
+		resp["socksAddr"] = addr
+	}
+	// 失败时把错误显式暴露。不再有"未接通但不当失败"那条分支 ——
+	// 隧道已经实现，剩下的失败都是真失败（配置、协议、端口），
+	// 留着一条永不命中分支只会让读者以为还有第三种可能。
 	if startErr != nil {
-		if st == string(syfuse.StateFailed) {
-			resp["error"] = startErr.Error()
-		} else {
-			// 未接通：如实说明，但不当作失败。
-			resp["note"] = startErr.Error()
-		}
+		resp["error"] = startErr.Error()
 	}
 	return resp, nil
 }
@@ -231,15 +235,17 @@ func handleProxiesStatus(pm *proxyManager) ipc.Handler {
 
 		state := string(syfuse.StateStopped)
 		nodeCount := 0
+		socksAddr := ""
 		if pm.engine != nil {
 			state = pm.engine.State()
 			nodeCount = pm.engine.NodeCount()
+			socksAddr = pm.engine.SocksAddr()
 		}
 		var uptime int64
 		if !pm.startedAt.IsZero() {
 			uptime = int64(time.Since(pm.startedAt).Seconds())
 		}
-		return map[string]any{
+		resp := map[string]any{
 			"state":        state,
 			"running":      pm.running,
 			"profileId":    pm.profileID,
@@ -247,14 +253,65 @@ func handleProxiesStatus(pm *proxyManager) ipc.Handler {
 			"nodeCount":    nodeCount,
 			"uptimeSec":    uptime,
 			"kernelLinked": isLinked(state),
-		}, nil
+		}
+		if socksAddr != "" {
+			resp["socksAddr"] = socksAddr
+		}
+		return resp, nil
 	}
 }
 
-// handleProxiesReload 处理 `proxies.reload`：重读配置并重新解析节点。
+// handleProxiesReload 处理 `proxies.reload`：重读配置并按当前运行状态决定要不要重建隧道。
 //
-// 与 start 的区别：reload **不改变**"运行与否"，只替换配置。
-// 本来没跑就不因为 reload 变成在跑 —— 否则一次配置刷新会把 UI 变成"已连接"。
+// 与 start 的区别有两条，都是有意的：
+//  1. **未运行时只刷新节点表，不起隧道**（走 engine.Load）。若顺手起一条，
+//     就会出现"守护进程里有个真监听端在收流量、UI 显示未连接"的分裂；
+//  2. **运行中才重建隧道**（走完整 start）。换配置必须换隧道，
+//     否则新规则/新节点永远不会生效，而 UI 显示的是新配置。
+func (pm *proxyManager) reload(configJSON string, profileID, nodeName string) (any, error) {
+	pm.mu.Lock()
+	wasRunning := pm.running
+	if pm.engine == nil {
+		pm.engine = syfuse.NewEngine()
+	}
+	eng := pm.engine
+	pm.mu.Unlock()
+
+	if !wasRunning {
+		// 只刷新节点表。错误必须让调用方看到 —— 静默保留旧节点表
+		// 会让"reload 成功"与"配置其实没换"无法区分。
+		if err := eng.Load(configJSON); err != nil {
+			return nil, err
+		}
+		pm.mu.Lock()
+		defer pm.mu.Unlock()
+		if profileID != "" {
+			pm.profileID = profileID
+		}
+		if nodeName != "" {
+			pm.selected = nodeName
+		}
+		return map[string]any{
+			"state":        eng.State(),
+			"running":      false,
+			"profileId":    pm.profileID,
+			"selected":     pm.selected,
+			"nodeCount":    eng.NodeCount(),
+			"kernelLinked": isLinked(eng.State()),
+			"reloaded":     true,
+		}, nil
+	}
+
+	res, err := pm.start(configJSON, profileID, nodeName)
+	if err != nil {
+		return nil, err
+	}
+	m := res.(map[string]any)
+	m["reloaded"] = true
+	return m, nil
+}
+
+// handleProxiesReload 是 reload 的 IPC 包装：负责取出参数与配置来源。
 func handleProxiesReload(pm *proxyManager, paths Paths) ipc.Handler {
 	return func(params json.RawMessage) (any, error) {
 		p, err := decodeProxyParams(params)
@@ -268,23 +325,7 @@ func handleProxiesReload(pm *proxyManager, paths Paths) ipc.Handler {
 				return nil, err
 			}
 		}
-
-		pm.mu.Lock()
-		wasRunning := pm.running
-		pm.mu.Unlock()
-
-		res, err := pm.start(configJSON, p.ProfileID, p.Node)
-		if err != nil {
-			return nil, err
-		}
-
-		pm.mu.Lock()
-		pm.running = wasRunning
-		pm.mu.Unlock()
-
-		m := res.(map[string]any)
-		m["reloaded"] = true
-		return m, nil
+		return pm.reload(configJSON, p.ProfileID, p.Node)
 	}
 }
 

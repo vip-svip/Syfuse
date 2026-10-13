@@ -12,13 +12,13 @@ MILESTONES
 | **M0 方案**        | 已完成                    | 架构文档、模块/App 分工、数据模型、`syfuse.conf` 键表、覆盖度对照表初稿、内核选型与许可核实、风险清单                                                                                                                                                                                                                                                                                                                | `README.md`：`## 架构`、`### 内核选型与许可核实`、`## 数据模型`、`## syfuse.conf 键表`、`## 功能覆盖度对照表`、`## 风险清单（M0）`、`## 【待核实】项`                                                                                                                                       | 无（M0 随 M1 交付，提示词 13 允许）                                                                   |
 | **M1 模块骨架**      | 待外部验证                  | 模块骨架（`module.prop`/`customize.sh`/`post-fs-data.sh`/`service.sh`/`action.sh`/`uninstall.sh`）、`action.sh` **主菜单 11 项 + 2 个子菜单**（守护进程控制 3 项、备份恢复 2 项；含各项"0) 退出"共 19 行菜单项）、Go 守护进程骨架、UDS 控制通道、还原清单机制、卸载残留检查                                                                                                                                                                    | `tests/run_module_checks.sh` **PASS=101 FAIL=0 PEND=1**；`tests/run_restore_check.sh` **PASS=17 FAIL=0**；`dist/syfuse-0.1.0.zip`（23 项，含 `bin/syfused-{arm64,arm,amd64}` 与 `apk/syfuse.apk`）                                                      | 接真机后跑 `tests/run_restore_check.sh` 真机分支与 `tests/run_e2e.sh`                               |
 | **M2 App 骨架与视觉** | JVM 可验证部分已完成；真机部分待外部验证 | 7 Tab 布局 B + 布局预设 A/B/C（含 4.1 六条硬标准的**可执行判据** `LayoutCriteria`）、OKLCH 设计令牌、受控玻璃（三档/降采样 4/层数上限 3/白名单断言/`FrameMonitor` 超标自动降档/API<31 伪玻璃）、7 个功能页；**策略层 26 条 JVM 用例**已进门禁                                                                                                                                                                                                      | `ui/src/main/kotlin/.../ui/glass/Glass.kt`、`ui/nav/LayoutPreset.kt`、`core/common/.../color/DesignTokens.kt`、`Oklch.kt`；`ui/src/test/.../GlassPolicyTest.kt`；`tests/ui_assets_check.sh` **PASS=8**；`tests/ui_parity_check.sh` **PASS=27 PEND=6** | 玻璃帧耗时与 UI 运行时回归需真机（`tests/ui_glass_perf.sh` / `ui_runtime_check.sh` / `ui_screenshot.sh`） |
-| **M3 内核打通**      | 进行中                    | ① **规则语义移植到 Go**（`src/syfuse/rule/`，与 `core:rule` 共用 `tests/corpus` + `tests/expect.tsv` 作跨语言预言机）；② **`rules.test/syntax/stats/build` 四个控制方法真实现**（不再占位）；③ **`UdsDataPlane` 替换 `NotLinkedDataPlane`**，界面走真实 UDS 通道；④ **协议层拆成纯 JVM 的 `daemon-protocol`**，用本机真实 `syfused` 进程跑通「客户端 → UDS → 守护进程」往返（13 条）；⑤ 内核宿主仍缺：`proxies.start` 如实返回"尚未实现（M3）"，**未接入内核宿主、未做 VpnService TUN** | `src/syfuse/rule/`（Go `go test` **127 用例 / 0 失败**）、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt`（13 条真实往返）、`engine/.../UdsDataPlane.kt`、`tests/run_module_checks.sh` R2/R2b 段                                                       | 见 `TASKS` 段的 **T1**（内核宿主 AAR 构建前置：gomobile + NDK）                                         |
-| **M4 节点与订阅**     | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | 节点 CRUD / 分享链接 round-trip / 订阅 diff                                                       |
-| **M5 规则与分流**     | 未开始                    | 规则引擎已可离线运行（28 用例 + 38 条语料全绿），**未接数据面**；性能：100 万条编译 436~~470ms、单次匹配 p99 中位数 0.6962~~0.8033ms（预算 <1ms，达标）                                                                                                                                                                                                                                                                     | `core/rule`、`tests/corpus/`、`tests/expect.tsv`、`tests/perf_results.txt`                                                                                                                                                                         | 把 `core:rule` 接到 `domain:engine` 数据面；索引化前先补语料                                             |
-| **M6 DNS**       | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | 多上游 / DoH·DoT·DoQ / fake-ip                                                               |
+| **M3 内核打通**      | **已完成（沙箱可验证部分）**            | ① **真隧道接通**：`Engine.Start` 建本地 SOCKS5 入站 + 路由决策 + 出站拨号，状态置 running，`SocksAddr()` 报实际监听地址；② `proxies.start` 经 UDS 往返**真的启动隧道**（Kotlin → UDS → 守护进程 → running + 可连接）；③ 规则模式分流语义与 Kotlin `domain/engine/RuleRouter.kt` 逐条对齐；④ 协议层纯 JVM `daemon-protocol`，28 条真实往返全绿；⑤ **仍未做**：Android 侧 VpnService TUN 入站（无真机不可验） | `src/syfuse/tunnel.go`、`src/internal/dataplane/`（含 `funcrouter.go`）、`src/syfuse/engine_test.go`（`TestEngine_StartBuildsWorkingTunnel` 等新用例）、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt`（`proxies_start 真的建立隧道并报回监听地址`）、`bash tests/run_kernel.sh` PASS 222 用例 | Android VpnService TUN 入站（C+lwIP + JNI，需真机） |
+| **M4 节点与订阅**     | **已完成（沙箱可验证部分）**            | 8 协议分享链接 round-trip（Kotlin 28 条 + Go 侧 parse 函数）、订阅解析与 diff、节点 CRUD、分享节点→代理节点映射 | `domain/node/ShareLink.kt`、`domain/src/test/.../ShareLinkTest.kt`（28 条）、`src/syfuse/node.go`、`:domain:test` **170 用例 0 失败** | 订阅源管理与自动更新（M5） |
+| **M5 规则与分流**     | **规则引擎已接数据面**              | 跨语言预言机（Kotlin `core:rule` ↔ Go `src/syfuse/rule` 共用 `tests/corpus` + `expect.tsv`）；Kotlin `RuleRouter`（23 条）+ 语料映射（3 条）；Go 侧 `syfuse.newRuleRouter` 把引擎决策映射成出站动作；规则模式空规则集**拒绝启动** | `domain/src/main/kotlin/.../engine/RuleRouter.kt`、`src/syfuse/tunnel.go`、`src/syfuse/engine_test.go`（`TestEngine_RuleModeRedirectsTraffic`） | 语料扩容 38 → ≥120 条；规则来源管理 |
+| **M6 DNS**       | 进行中（Go 侧并行 agent）     | `src/internal/dns/` 已落盘；多上游/超时重试/缓存/hosts 覆盖/FakeIP 由本轮并行 agent 补齐并自测 | `src/internal/dns/` | DNS 接进 dataplane 拨号前解析 + DoH 上游 |
 | **M7 模块与脚本**     | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | 模块系统 + QuickJS 脚本引擎                                                                       |
 | **M8 MITM 与抓包**  | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | CA 全流程 + 抓包查看器                                                                            |
-| **M9 数据与统计**     | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | 日志 / 连接列表 / 统计图表                                                                          |
+| **M9 数据与统计**     | 进行中（UI 并行 agent）       | 守护进程侧 `connections` / `traffic` 仍**未实现**（如实返回"尚未实现（M9）"）；`proxies.status` 已报真实字段与 `socksAddr`；Kotlin 侧日志/统计/连接列表页由本轮 agent 新建 | `src/cmd/syfused/main.go`（待实现方法表）、`src/cmd/syfused/proxies.go`（status 应答） | 内核侧连接跟踪（UID/目标/字节数）后接 UI |
 | **M10 过滤内核**     | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | AGH + uBO Lite + SY-Fusion 全语法接数据面                                                        |
 | **M11 Hook 与特权** | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | Hook 框架检测 + 系统证书 + hosts 注入                                                               |
 | **M12 防泄漏**      | 未开始                    | —                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                                                                                                                                                                               | 全维度检测 + 一键自检/修复                                                                           |
@@ -40,14 +40,14 @@ TASKS
 | **T0** 门禁脚本与提示词附录重同步（含附录 B 第⑥组 `$PRUNE` 勘误） | `tools/verify_deliverable.sh`、`tools/verify_deliverable.ps1`、`tools/extract_appendix.py`、`docs/errata/`、`tests/run_appendix_sync.sh` | 无 | `bash tools/verify_deliverable.sh README.md 300` 且第⑥组**真的列出了脚本**、`exit 0` | 30 min | **已完成** | **≈95 min（超预计 3.2 倍，见「第 5 轮」第 6 条）** |
 | **T7** 门禁第⑥组去子进程化（Windows 上 620 ms/文件 → 目标 <20 ms/文件） | `tools/verify_deliverable.sh` | 无 | ① 新旧 BOM/CRLF 判定**等价性矩阵**（BOM×CRLF×文件长度 12 组）全通过；② `bash tools/verify_deliverable.sh README.md 300` 退出码 0 且耗时 < 20 s；③ 更新 `docs/errata/` 清单 | 30 min | **已完成** | **≈35 min**（39 s → **13.3 s**，检查对象与断言条数不变） |
 | **T1** 内核宿主 AAR 构建链路（gomobile + NDK 前置检查，产出 `src/out/*.aar`） | `src/tools/build_aar.sh`、`kernel/` | 无 | `bash src/tools/build_aar.sh` 产出 AAR 且 `unzip -l` 含 `jni/<abi>/libgojni.so` | 60 min | **已完成** | **≈70 min**（含装 Go 1.26 + gomobile + NDK 27.2） |
-| **T2** `proxies.start/stop/reload/select/urlTest` 在 Go 侧真实现（先出最小可跑隧道） | `src/cmd/syfused/proxies.go`、`src/internal/netprobe/`、`src/syfuse/node.go` | ~~T1~~ 已解除 | `go test ./cmd/syfused/` 全绿（含 11 条新用例） | 60 min | **已完成** | **≈55 min** |
-| **T3** `UdsDataPlane` 接真实 `proxies.*`（去掉"未实现"路径）并补往返断言 | `engine/.../UdsDataPlane.kt`、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt` | T2 ✅ | `:daemon-protocol:test` 全绿且新增隧道往返用例 | 45 min | 未开始 | — |
-| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/node/ShareLink.kt`、`domain/src/test/.../node/ShareLinkTest.kt` | 无 | `source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | **未开始**（子代理尝试失败，见下） | — |
+| **T2** `proxies.start/stop/reload/select/urlTest` 在 Go 侧真实现（先出最小可跑隧道） | `src/cmd/syfused/proxies.go`、`src/internal/netprobe/`、`src/syfuse/node.go` | ~~T1~~ 已解除 | `go test ./cmd/syfused/` 全绿 | 60 min | **已完成** | **≈55 min** |
+| **T3** `UdsDataPlane` 接真实 `proxies.*`（去掉"未实现"路径）并补往返断言 | `engine/.../UdsDataPlane.kt`、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt` | T2 ✅ | `:daemon-protocol:test` 全绿且新增隧道往返用例 | 45 min | **已完成（第 6 轮）** | **≈25 min**（28 条全绿，含 `proxies_start` 真实建隧道） |
+| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/node/ShareLink.kt`、`domain/src/test/.../node/ShareLinkTest.kt` | 无 | `source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | **已完成** | **实测 28 条 0 失败**（`ShareLinkTest`） |
 | **T4a** 分享链接：`ss` / `ssr` / `vmess` 三协议 + 往返 | 同上（同一文件，故 T4a→T4b→T4c **串行**） | 无 | `:domain:test --tests '*ShareLink*'` 中这三个协议的用例全绿 | 30 min | 未开始 | — |
 | **T4b** 分享链接：`vless` / `trojan` / `hysteria2` 三协议 + 往返 | 同上 | T4a | 同上 | 30 min | 未开始 | — |
 | **T4c** 分享链接：`http`(`https`) / `socks5` + 全 8 协议往返矩阵 + 与 Go 侧行为对齐核对 | 同上 | T4b | 同上，且 8 协议往返矩阵全绿 | 30 min | 未开始 | — |
-| **T5** M4：订阅解析与 diff（`base64`/`clash yaml` 两种形态，diff 出新增/删除/改动） | `domain/node/Subscription.kt`、`domain/src/test/.../SubscriptionTest.kt` | T4 | `:domain:test --tests '*Subscription*'` 全绿 | 60 min | 未开始 | — |
-| **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | 未开始 | — |
+| **T5** M4：订阅解析与 diff（`base64`/`clash yaml` 两种形态，diff 出新增/删除/改动） | `domain/node/Subscription.kt`、`domain/src/test/.../SubscriptionTest.kt` | T4 | `:domain:test --tests '*Subscription*'` 全绿 | 60 min | **已完成** | **17 + 18 + 15 三条 0 失败** |
+| **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | **进行中（第 6 轮派 agent）** | — |
 
 **并行批次**（2.11-B，常驻 3～6 个，同文件不并行）：
 - 批次 1（无依赖）：**T0 ✅ / T7 ✅**；**T4a→T4b→T4c**（串行，同一文件）；**T6**；**T1** 受阻（缺 gomobile + NDK）
@@ -61,21 +61,17 @@ TASKS
 
 ```
 
-NEXT_ACTION: T0 / T7 已完成并推送（`636983e`）。下一轮**由主代理自己做**批次 1 剩余单元，  
-**不再用子代理做代码单元**（本轮实测子代理零产出，见「第 5 轮」第 11 条）。  
-顺序（同文件，必须串行）：**T4a → T4b → T4c**，其间可并行做 **T6**（不同文件）。  
-\- **T4a**：新建 `domain/src/main/kotlin/.../domain/node/ShareLink.kt`  
-（先只做 `ss` / `ssr` / `vmess`）+ `domain/src/test/.../domain/node/ShareLinkTest.kt`。  
-**语义真相是 Go 侧 `src/syfuse/node.go`**（已有 8 个 parse 函数 + 28 个用例），  
-Kotlin 实现必须与它行为一致（SIP002 base64 userinfo、legacy 全 base64、  
-percent-encoding、vmess 端口是字符串或数字、URL-safe base64、默认节点名等）。  
-验收：`source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'`。  
-\- **T4b**：追加 `vless`（含 REALITY）/ `trojan`（含 security=none）/ `hysteria2`（含 `hy2` 别名）。  
-\- **T4c**：追加 `http`(`https`) / `socks5`，补全 8 协议往返矩阵，并与 Go 侧行为逐条核对。  
-\- **T6**：`tests/corpus/*` + `tests/expect.tsv` 从 38 条期望扩到 ≥120 条。  
-验收：`bash tests/run_kernel.sh` + `syfuse_gradle :core:rule:test` 两侧同时绿且条数一致。  
-收口：主代理串行跑 `bash tests/run_unit.sh` 取集成证据 → 全量门禁 → 提交 → 推送。  
-之后进批次 2 的 **T5**（订阅解析与 diff，依赖 T4c）；T2/T3 仍等 T1（缺 gomobile + NDK）。  
+NEXT_ACTION: 第 6 轮（2026-10-13）已把**用户唯一能感知的核心闭环打通**：
+`proxies.start` 经 UDS 驱动真实引擎，建出本地 SOCKS5 入站隧道并报 running + socksAddr
+（Kotlin ↔ UDS ↔ 守护进程 ↔ 真隧道，28 条真实往返全绿；Go 侧内核门禁 222 用例 0 失败）。
+下一轮第一个动作：**Android VpnService TUN 入站**（M3 最后一块，需真机）——
+在此之前不要声称"设备级代理可用"，沙箱能验的是隧道本身。
+并行进行中的（第 6 轮派出的 4 个 agent，产出必须由主代理亲自复跑验收命令才计入）：
+  ① T6 语料扩容 38 → ≥120 条（`tests/corpus` + `tests/expect.tsv`）
+  ② M6 Go DNS 解析器（`src/internal/dns/`，零第三方依赖）
+  ③ M9 UI 三件套（日志/统计/连接列表，只准新建文件）
+  ④ 模块侧 APK 自动安装（`module/customize.sh`）
+之后进 M7（模块系统 + QuickJS）与 M8（MITM 抓包）。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）  
 ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2  
 （已在 PENDING-EXTERNAL.md 第 5 节写清"缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果"）  
@@ -94,11 +90,69 @@ ROUND_TIME: 第 5 轮 ≈3h40m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min �
 子代理尝试 T4/T6 约 30 min 后确认零产出并终止）  
 UNIT: 第 5 轮交付 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 12 组等价性矩阵）；  
 **T4/T6 未交付**（子代理零产出，已拆成 T4a/b/c 并改为主代理自做）  
-LAST_UPDATED: 2026-10-13T06:20Z (2026-10-13 14:20 +0800)
+LAST_UPDATED: 2026-10-13T12:55Z (2026-10-13 20:55 +0800)
 
 ```
 
 ---
+
+## 第 6 轮（2026-10-13）实际做了什么
+
+本轮主线只有一件事：**把"用户选了节点、点了连接，流量真的流出去"这条闭环打通**。
+起因是用户反复说"连个半成品都不是"——界面能点连接，但 `proxies.start` 一路如实返回
+"尚未实现"，核心闭环完成度是 0。本轮之后它是 100%（沙箱可验证的范围内）。
+
+1. **先量再动**：`git status` + 全仓库 grep `尚未实现`，把缺口定位到 5 处
+   （`src/syfuse/doc.go`、`src/syfuse/core.go`、两条 Kotlin 测试、`tests/run_module_checks.sh` 的断言），
+   而不是凭印象改。
+
+2. **`internal/dataplane` 补一个最小口子 `FuncRouter`**（`funcrouter.go` + 4 条用例）。
+   `Router` 接口有未导出的 `validate`，外部包无法实现；而调用方（本仓库 `syfuse/rule`）
+   已有 ABP 全语法 + 优先级模型，把它降级成 `RouteRule` 的四种形态会丢语义
+   （`$important`、`@@`、正则、URL 锚定没有对应物）。因此只开一个函数口子，
+   规则语义仍留在调用方。nil 防御分支取 proxy 而不是 direct：fn 为 nil 只可能是
+   构造期校验被绕过，此时"多走一次节点"远好过"把本该走节点的流量放出去"。
+
+3. **`src/syfuse/tunnel.go`：配置 → 隧道参数**。三种路由模式各给一个**显式**决策函数，
+   不依赖 dataplane 的隐式默认值（Router==nil 表示全量走代理）——"什么都没配时流量往哪走"
+   必须是看得见的。规则模式的映射表与 Kotlin `domain/engine/RuleRouter.kt` **逐条对齐**
+   （BLOCK→REJECT、ALLOW→DIRECT、REWRITE→DIRECT、NONE→按 Kotlin 默认 DIRECT），
+   并写明清"这不是产品结论，是两处必须相同的结论"。规则模式给空规则集**拒绝启动**。
+
+4. **`Engine.Start` 真建隧道**：`Load`（只解析不建隧道）与 `Start`（解析 + 建隧道）分开。
+   分开的理由是 `proxies.reload` 在未运行时也要刷新节点表——若顺手起一条隧道，
+   就会出现"守护进程里有个真监听端在收流量、UI 显示未连接"的分裂。
+   这个分裂是本轮**实测抓到的**：第一版 reload 直接走 start，测试当场报
+   `未运行时的 reload 不得把 running 置 true，得到 true`。
+
+5. **统计不再造假**：`StatsJSON` 原来用"启动到现在的秒数"当连接数。现在全部取
+   dataplane 的真实计数器。用户看到"已连接 42 个"而实际一个都没有，那是编造。
+
+6. **诚实性测试按事实改写，而不是删掉了事**：
+   - `TestEngine_StartReportsTunnelNotImplemented` → `TestEngine_StartBuildsWorkingTunnel`
+     （真隧道往返 16KB 载荷 + 统计真数字）+ `TestEngine_StartFailsClosedWithoutRunningState`
+     （vmess 无拨号器时必须失败且状态不得为 running）；
+   - Kotlin `隧道未实现时拿到的是可展示的原因` → `proxies_start 真的建立隧道并报回监听地址`
+     （连 `socksAddr` 真的能连上）。改写时发现那条旧用例的参数字段名 `coreConfig` 是**错的**
+     （正确是 `configJson`），于是一个字段名拼错把"启动隧道"测成了"读配置失败"。
+
+7. **Kotlin 契约表两侧漂移被实测暴露**：`:daemon-protocol:test` 本轮一开始就是**红的 3 条**
+   （不是本轮改红的，是上一轮 Go 侧实现后 Kotlin 表没同步）。契约测试从 Go 源码
+   `main.go` 的 `srv.Handle(...)` 推导已实现集合，与 Kotlin 手写表逐项比对 —— 这正是它该干的事。
+   修正：7 个 `proxies.*` 方法从未实现表移到已实现表。改完全绿（28 条）。
+
+8. **门禁补洞**：Kotlin 反引号用例名里的 `.` 也会让 Windows 编译失败
+   （`Name contains illegal characters: ..`），而门禁只查 `" * ? < > | :`。
+   已把 `.` 加进字符类，并核实全仓库没有其它带点用例名会误伤。
+
+9. **`NewEngine` 初值从 `not_linked` 改为 `stopped`**：内核就在本进程内，
+   "未接通"已无对应事实；留着会让上层把"还没点连接"显示成"内核没装上"。
+
+10. **收口证据**（全部由主代理亲自跑，不是转述）：
+    - `bash tests/run_kernel.sh` → **kernel-checks: PASS，用例=222 失败=0**，go.mod 无 require、无 go.sum
+    - `:domain:test --rerun` → **170 用例 0 失败 0 跳过**（12 个测试类逐类点数）
+    - `:daemon-protocol:test --rerun` → **28 条全绿**（含 2 条新写的真实隧道往返）
+    - `gofmt -l` / `go vet` 干净
 
 ## 第 5 轮（2026-10-13）实际做了什么
 

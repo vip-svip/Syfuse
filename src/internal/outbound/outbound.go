@@ -14,12 +14,14 @@
 //
 // 每种协议的真实用户占比差得很远，按占比排：
 //
-//	Shadowsocks(AEAD)  最常见，纯 stdlib 可做（crypto/aes、cipher/chacha20poly1305）
+//	Shadowsocks(AEAD)  最常见，纯 stdlib 可做（crypto/aes、crypto/hkdf；
+//	                   chacha20-ietf-poly1305 标准库没有对应包，按 RFC 8439 自实现，见 chacha20poly1305.go）
 //	Trojan             TLS + 极简帧，crypto/tls 在 stdlib 里
 //	SOCKS5 / HTTP      上游本身是 socks5/http 代理时用（链式代理、自建网关）
 //	vmess / vless      需要自研分帧与 AES-CBC/GCM 组装，工作量数倍于上面几种
 //
-// 所以先把前三种做扎实并验证，vmess/vless 留作独立单元。
+// 前三种均已实现并验证（各自文件的测试含协议帧逐字节断言与自环往返），
+// vmess/vless 留作独立单元。
 // 这不是"挑简单的做"，而是**让尽可能多的真实节点今天就能通**。
 //
 // # 零依赖
@@ -427,6 +429,9 @@ func NewDialer(cfg Config) (Dialer, error) {
 			Server: cfg.Server, Port: cfg.Port, Password: cfg.Password,
 			SNI: cfg.SNI, Insecure: cfg.Insecure,
 		}, nil
+	case "ss", "shadowsocks":
+		// "shadowsocks" 是同一协议的完整拼写：节点配置里两种都有人写。
+		return &SsDialer{Server: cfg.Server, Port: cfg.Port, Password: cfg.Password, Cipher: cfg.Cipher}, nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedProtocol, cfg.Protocol)
 	}

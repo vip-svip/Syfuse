@@ -273,6 +273,21 @@ while IFS= read -r s; do
 done < <(find module tests tools -name '*.sh' -type f 2>/dev/null)
 [ "$syntax_bad" = "0" ] && pass "全部 shell 脚本通过 bash -n 语法检查"
 
+# 行尾检查：shell 脚本必须是 LF。CRLF 会让 Android 的 sh 报
+# "bad interpreter: /system/bin/sh^M"，而且是刷入后才暴露，排查成本极高。
+#
+# 注意检测方法：本环境（Git Bash）的 `grep -c $'\r'` 会把每一行都算成命中
+# （实测 194/194 行"命中"但 tr 数出 0 个 CR 字节）——**必须用 tr 数字节数**。
+crlf_bad=0
+while IFS= read -r s; do
+  n=$(tr -cd '\r' < "$s" | wc -c | tr -d ' ')
+  if [ "$n" -gt 0 ]; then
+    fail "shell 脚本含 CRLF 行尾（$n 个 CR 字节）: $s"
+    crlf_bad=1
+  fi
+done < <(find module tests tools -name '*.sh' -type f 2>/dev/null)
+[ "$crlf_bad" = "0" ] && pass "全部 shell 脚本为 LF 行尾（Android 可执行）"
+
 py=""
 for c in "$HOME/.workbuddy-ai/binaries/python/versions"/*/python.exe python3 python; do
   if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then py="$c"; break; fi

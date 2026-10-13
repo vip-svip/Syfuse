@@ -20,8 +20,8 @@
 | 检查 | 退出码 | 结论 |
 |---|---|---|
 | 交付门禁（提示词文件本身） | **0** | 全部通过（WARN 6 项） |
-| 交付门禁（README.md，`.sh` 与 `.ps1` 两版） | **0** | 两版均「全部通过（WARN 2 项）」，**需求项 38 条缺失 0 条**、第 ⑥ 组列出 28 个脚本 × 2 条断言全 PASS。原始输出见 §14.6 |
-| `tests/run_appendix_sync.sh`（新增） | **0** | PASS=8 FAIL=0 —— 附录 A/B/C 与 `tools/` 的偏差**逐字等于**已登记勘误；两个变异测试均正确报 FAIL，见 §14.7 |
+| 交付门禁（README.md，`.sh` 与 `.ps1` 两版） | **0** | 两版均「全部通过（WARN 2 项）」，**需求项 38 条缺失 0 条**、第 ⑥ 组列出 28 个脚本 × 2 条断言全 PASS。原始输出见 §14.6；`.sh` 13.3 s / `.ps1` 0.96 s |
+| `tests/run_appendix_sync.sh`（新增） | **0** | PASS=8 FAIL=0 —— 附录 A/B/C 与 `tools/` 的偏差**逐字等于**已登记勘误；三次护栏自证均正确报 FAIL，见 §14.7 与 §14.11 |
 | `tools/scan_secrets.py` | **0** | PASS — 无禁止项（WARN 32 条，豁免 19 条；其中 19 条是本文件的自引用，见 §3 的说明） |
 | `tests/run_unit.sh`（JVM 单测） | **0** | **5 模块 / 15 套件 / 126 用例 / 失败 0 / 错误 0 / 跳过 1** |
 | `cd src && go test ./...` | **0** | 4 包全绿；**127 用例 / 0 失败** |
@@ -1422,6 +1422,12 @@ E1 的**证据强度**：修 E1 之前，第 ⑥ 组输出 `[WARN] 未找到 .ps
 
 ### 14.6 重同步 + 勘误后的原始输出
 
+> 下面两段是**提交 `a002e8c` 时**的原始输出（README 79000 字节 / 1150 行）。
+> 之后 README 又长了两次（补勘误 E5、更新耗时基线），现为 **81068 字节 / 1171 行**；
+> 重新跑过的结论**不变**：需求项 38 条缺失 0 条、第⑥组 56 条断言全 PASS、
+> `全部通过（WARN 2 项）`、退出码 0。**没有重贴整段是因为结论没变**；
+> 若有任一项变化，这里必须整段替换而不是加注 —— 加注只允许用于"数字变了、结论没变"。
+
 #### 14.6.1 Linux/CI 版（`bash tools/verify_deliverable.sh README.md 300`）
 
 ```text
@@ -1825,3 +1831,183 @@ $ bash tools/verify_deliverable.sh README.md 300
 **教训（写进本节是为了下次不再踩）**：凡是"逐字节一致"类断言，都必须用
 **"删掉工作副本 → 重新 checkout → 量字节"** 来验证，不能只在当前工作副本上跑绿就收工 ——
 当前工作副本是自己写出来的，它天然符合自己的期望，因此**它不能作为该类断言的验证环境**。
+
+### 14.11 T7：门禁第⑥组去子进程化（含等价性矩阵）
+
+**为什么要动它**：E1 修好后第⑥组**真的跑起来了**，代价是 `.sh` 门禁从 10 s 涨到 39 s。
+14.8 已把根因量清楚：每次迭代 ≈620 ms，成本全在
+`bom=$(head -c 3 … | od … | tr … | sed …)` 这**一条 4 进程流水线**上
+（Git Bash 创建进程 ≈155 ms/次），而同一逻辑在 `.ps1` 版只要 0.96 s。
+
+**前置条件（2.11-I：不做无度量提速；且"改快了但改错了"是这类优化最典型的翻车方式）**：
+先用一个 **12 组等价性矩阵**（BOM 有/无 × CRLF 有/无 × 长度 空/短/长）
+把新旧判定逐组对比，全组一致才允许替换。
+
+**这个矩阵当场抓到了我第一版的错误**，值得完整记下来：
+
+> 我第一版把 CRLF 判定写成 `raw=$(<"$s")` 然后 `case "$raw" in *$'\r'*)`。
+> 看起来没问题，但矩阵里 `bom0_crlf1_short` 与 `bom1_crlf1_short` 两组报 `old=1 new=0`。
+> 单独复现后确认：**Git Bash 的 `$(<file)` 会把末尾的 `\r\n` 一起吃掉**
+> （`a\r\n` → `a`，而中间行的 `\r` 保留：`a\r\nb\r\n` → `a\r\nb`）。
+> 后果是"整个文件只有一行且以 CRLF 结尾"的脚本会被误判成**没有 CRLF** ——
+> 而这恰恰是最典型的坏文件。**如果只拿真实仓库跑一遍就收工，这个 bug 永远不会暴露**
+> （真实脚本都是多行的）。改成 `read` 逐行扫（只剥行尾 `\n`、保留 `\r`，
+> 且 bash 3.2 就有，不依赖 `mapfile`）后 12/12 一致。
+
+矩阵原始输出（脚本内容见本节末尾）：
+
+```text
+== 等价性矩阵（BOM × CRLF × 长度 = 12 组）==
+  [OK]   bom0_crlf0_empty           bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom0_crlf0_short           bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom0_crlf0_long            bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom0_crlf1_empty           bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom0_crlf1_short           bom old=0 new=0   crlf old=1 new=1
+  [OK]   bom0_crlf1_long            bom old=0 new=0   crlf old=1 new=1
+  [OK]   bom1_crlf0_empty           bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom1_crlf0_short           bom old=1 new=1   crlf old=0 new=0
+  [OK]   bom1_crlf0_long            bom old=1 new=1   crlf old=0 new=0
+  [OK]   bom1_crlf1_empty           bom old=0 new=0   crlf old=0 new=0
+  [OK]   bom1_crlf1_short           bom old=1 new=1   crlf old=1 new=1
+  [OK]   bom1_crlf1_long            bom old=1 new=1   crlf old=1 new=1
+
+== 附：非矩阵边界（记录行为，不计入等价性）==
+  one_byte.sh            bom old=0 new=0   crlf old=0 new=0
+  nul_prefix.sh          bom old=0 new=0   crlf old=0 new=0
+  nul_then_bom.sh        bom old=0 new=1   crlf old=0 new=0
+
+===========================================
+等价性矩阵: PASS=12 FAIL=0
+===========================================
+[safe-delete][SAFE_DELETE_INVALID_PATH] embedded drive prefix is not allowed
+EXIT=0
+```
+
+**改动（勘误 E5，登记在 `docs/errata/appendix-B-verify_deliverable.sh.diff`）**：
+
+| 位置 | 改前 | 改后 | 每次迭代省下 |
+|---|---|---|---|
+| 取前 3 字节 | `head -c 3 \| od \| tr \| sed`（4 进程） | `IFS= read -r -N 3 h3 < "$s"` + `case`（0 进程） | ≈620 ms |
+| CRLF 判定 | `grep -qU $'\r'`（1 进程） | `while IFS= read -r __line` 逐行扫（0 进程） | ≈155 ms |
+| 取文件名 | `$(basename "$s")`（1 进程 × 2 处） | `${s##*/}`（bash 参数展开，0 进程） | ≈310 ms |
+
+**结果**（同一份 README、同一批 28 个文件、同样 56 条断言）：
+
+| | 改前 | 改后 |
+|---|---|---|
+| `.sh` 门禁耗时 | 39 s | **13.3 s**（两次：13344 / 13291 ms） |
+| 第⑥组条目数 | 56 PASS | 56 PASS（**没有减少**） |
+| 需求项 | 38/38 | 38/38 |
+| 退出码 | 0 | 0 |
+
+**已知的有界差异**（矩阵"附：非矩阵边界"一节记录，不计入等价性）：
+`\0` + BOM 开头的文件，旧判定=0、新判定=1。原因是 `read -N` 会丢弃 NUL，
+于是被丢掉的 NUL 后面的 BOM 变成了"开头"。**以 NUL 开头的文件不是可执行脚本**，
+两种判定对它都没有实际意义，故接受该差异并在此明确登记，而不是假装不存在。
+
+**护栏自证**：改完 E5 之后、更新 `docs/errata/` 之前，`tests/run_appendix_sync.sh`
+立刻报 `[FAIL] verify_deliverable.sh 与附录的偏差**不等于**已登记勘误`，`PASS=7 FAIL=1`、`EXIT=1`。
+这是该护栏第三次证明自己不是空断言（前两次是 14.7 的两个变异测试）。
+更新清单后回到 `PASS=8 FAIL=0`。
+
+**等价性矩阵脚本**（一次性验证工具，不随仓库交付；正文留档以便复现）：
+
+```bash
+#!/usr/bin/env bash
+# T7 前置：旧判定 vs 新判定的等价性矩阵
+#
+# 为什么必须先做这一步：第⑥组的 BOM/CRLF 判定要被换成 bash 内建读取（去掉 4 次子进程），
+# 而"改快了但改错了"正是这类优化最典型的翻车方式。所以先用一个矩阵把两种实现逐组对比，
+# 全组一致才允许替换。
+#
+# 矩阵维度：BOM(有/无) × CRLF(有/无) × 文件长度(空/短/长) = 12 组
+set -uo pipefail
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# ---------- 旧判定（当前 tools/verify_deliverable.sh 里的写法）----------
+old_bom() { head -c 3 "$1" | od -An -tu1 | tr -s ' ' | sed 's/^ //'; }
+old_has_bom() { [ "$(old_bom "$1")" = "239 187 191" ] && echo 1 || echo 0; }
+old_has_crlf() { grep -qU $'\r' "$1" 2>/dev/null && echo 1 || echo 0; }
+
+# ---------- 新判定（去子进程化：纯 bash 内建）----------
+new_has_bom() {
+  local h3=""
+  IFS= read -r -N 3 h3 < "$1" 2>/dev/null || true
+  case "$h3" in $'\xef\xbb\xbf'*) echo 1 ;; *) echo 0 ;; esac
+}
+new_has_crlf() {
+  # 不能用 raw="$(<file)"：Git Bash 的 $(<file) 会把**末尾的 CRLF 一起吃掉**
+  # （实测 "a\r\n" → "a"，中间行的 \r 保留），于是"整文件只有一行 CRLF"的脚本
+  # 会被判成没有 CRLF —— 等价性矩阵正是这样把它抓出来的。
+  # 改用 read 逐行扫（bash 3.2 就有，不依赖 mapfile），read 只剥行尾 \n，保留 \r。
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *$'\r'*) echo 1; return 0 ;; esac
+  done < "$1"
+  echo 0
+}
+
+BOM=$'\xef\xbb\xbf'
+PASS=0; FAIL=0
+FAILED_CASES=""
+
+# 生成 12 组夹具：<名> <有无BOM> <有无CRLF> <长度档>
+mk() {
+  local name="$1" bom="$2" crlf="$3" size="$4"
+  local f="$TMP/$name.sh"
+  local nl=$'\n'
+  [ "$crlf" = "1" ] && nl=$'\r\n'
+  local prefix=""
+  [ "$bom" = "1" ] && prefix="$BOM"
+  case "$size" in
+    empty) printf '' > "$f" ;;
+    short) printf '%s' "$prefix" > "$f"; printf 'a%s' "$nl" >> "$f" ;;
+    long)  { printf '%s' "$prefix"; for i in $(seq 1 200); do printf 'echo %s%s' "$i" "$nl"; done; } > "$f" ;;
+  esac
+  local ob nb oc nc
+  ob=$(old_has_bom "$f"); nb=$(new_has_bom "$f")
+  oc=$(old_has_crlf "$f"); nc=$(new_has_crlf "$f")
+  local ok=1
+  [ "$ob" = "$nb" ] || ok=0
+  [ "$oc" = "$nc" ] || ok=0
+  if [ "$ok" -eq 1 ]; then
+    PASS=$((PASS+1))
+    printf '  [OK]   %-26s bom old=%s new=%s   crlf old=%s new=%s\n' "$name" "$ob" "$nb" "$oc" "$nc"
+  else
+    FAIL=$((FAIL+1))
+    FAILED_CASES="$FAILED_CASES $name"
+    printf '  [DIFF] %-26s bom old=%s new=%s   crlf old=%s new=%s\n' "$name" "$ob" "$nb" "$oc" "$nc"
+  fi
+}
+
+echo "== 等价性矩阵（BOM × CRLF × 长度 = 12 组）=="
+for bom in 0 1; do
+  for crlf in 0 1; do
+    for size in empty short long; do
+      mk "bom${bom}_crlf${crlf}_${size}" "$bom" "$crlf" "$size"
+    done
+  done
+done
+
+echo
+echo "== 附：非矩阵边界（记录行为，不计入等价性）=="
+# 这些不是真实脚本会出现的形态，但要把行为记录下来，避免以后被当成"漏了"
+printf 'x' > "$TMP/one_byte.sh"
+printf '\0\0\0' > "$TMP/nul_prefix.sh"
+printf '\0%s' "$BOM" > "$TMP/nul_then_bom.sh"
+for f in one_byte.sh nul_prefix.sh nul_then_bom.sh; do
+  printf '  %-22s bom old=%s new=%s   crlf old=%s new=%s\n' "$f" \
+    "$(old_has_bom "$TMP/$f")" "$(new_has_bom "$TMP/$f")" \
+    "$(old_has_crlf "$TMP/$f")" "$(new_has_crlf "$TMP/$f")"
+done
+
+echo
+echo "==========================================="
+echo "等价性矩阵: PASS=$PASS FAIL=$FAIL"
+[ "$FAIL" -eq 0 ] || echo "不一致的组:$FAILED_CASES"
+echo "==========================================="
+[ "$FAIL" -eq 0 ] || exit 1
+exit 0
+```

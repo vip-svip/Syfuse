@@ -8,7 +8,7 @@
  # 本文件必须是「无 BOM 的 UTF-8」——带 BOM 会破坏 shebang；这一点也由第 6 组检查。
  #
  # 用法:
-@@ -192,7 +192,11 @@
+@@ -192,29 +192,51 @@
  head2 "6. 脚本编码规范"
  SCAN_DIR=$(dirname "$FILE")
  FOUND=0
@@ -21,8 +21,47 @@
  while IFS= read -r s; do
    [ -z "$s" ] && continue
    FOUND=$((FOUND+1))
-@@ -213,8 +217,9 @@
-       c_ok "$(basename "$s") 换行为 LF（正确）"
+-  bom=$(head -c 3 "$s" | od -An -tu1 | tr -s ' ' | sed 's/^ //')
++  # 勘误 E5（T7）：原先用 `head -c 3 | od | tr | sed` 取前 3 字节 —— 一条 4 进程流水线。
++  # 实测每次迭代 ≈620 ms（Git Bash 创建进程 ≈155 ms/次），28 个文件就是 ≈34 s；
++  # 而同一逻辑在 .ps1 版（Get-Content 是内建）只要 0.96 s —— 说明慢在进程创建，不在算法。
++  # 改用 bash 内建读取。新旧判定的等价性已用 12 组矩阵（BOM × CRLF × 长度）逐组核对，
++  # 原始输出见 docs/EVIDENCE.md §14.11。
++  h3=""
++  IFS= read -r -N 3 h3 < "$s" 2>/dev/null || true
++  has_bom=0
++  case "$h3" in $'\xef\xbb\xbf'*) has_bom=1 ;; esac
+   hasext_sh=0; case "$s" in *.sh) hasext_sh=1;; esac
+-  if [ "$bom" = "239 187 191" ]; then
+-    if [ "$hasext_sh" -eq 1 ]; then c_bad "$(basename "$s") 带 BOM，会破坏 shebang，必须去掉"
+-    else c_ok "$(basename "$s") 带 UTF-8 BOM（PS 5.1 解码正确）"; fi
++  if [ "$has_bom" -eq 1 ]; then
++    if [ "$hasext_sh" -eq 1 ]; then c_bad "${s##*/} 带 BOM，会破坏 shebang，必须去掉"
++    else c_ok "${s##*/} 带 UTF-8 BOM（PS 5.1 解码正确）"; fi
+   else
+-    if [ "$hasext_sh" -eq 1 ]; then c_ok "$(basename "$s") 无 BOM（shebang 正确）"
+-    else c_bad "$(basename "$s") 缺少 UTF-8 BOM：Windows PowerShell 5.1 会按 ANSI 解码中文并报语法错误"; fi
++    if [ "$hasext_sh" -eq 1 ]; then c_ok "${s##*/} 无 BOM（shebang 正确）"
++    else c_bad "${s##*/} 缺少 UTF-8 BOM：Windows PowerShell 5.1 会按 ANSI 解码中文并报语法错误"; fi
+   fi
+   # 换行符：.sh 混入 CRLF 会让 bash 报 "\r: command not found"（Windows 上极易发生）
+   if [ "$hasext_sh" -eq 1 ]; then
+-    if grep -qU $'\r' "$s" 2>/dev/null; then
+-      c_bad "$(basename "$s") 含 CRLF 换行，bash 会报 '\r: command not found'，必须转成 LF"
++    # 同样去子进程化（原先每个文件一次 grep）。
++    # 注意**不能**写成 raw=$(<"$s")：Git Bash 的 $(<file) 会把末尾的 CRLF 一起吃掉
++    # （实测 "a\r\n" → "a"），于是"整文件只有一行 CRLF"的脚本会被误判为没有 CRLF ——
++    # 这个坑就是被 12 组等价性矩阵抓出来的，不是推理出来的。
++    # read 只剥行尾 \n、保留 \r，且 bash 3.2 就有（不依赖 mapfile）。
++    has_crlf=0
++    while IFS= read -r __line || [ -n "$__line" ]; do
++      case "$__line" in *$'\r'*) has_crlf=1; break ;; esac
++    done < "$s"
++    if [ "$has_crlf" -eq 1 ]; then
++      c_bad "${s##*/} 含 CRLF 换行，bash 会报 '\r: command not found'，必须转成 LF"
+     else
+-      c_ok "$(basename "$s") 换行为 LF（正确）"
++      c_ok "${s##*/} 换行为 LF（正确）"
      fi
    fi
 -done < <(find "$SCAN_DIR" -type f \( -name '*.ps1' -o -name '*.sh' \) ! \( $PRUNE \) 2>/dev/null)

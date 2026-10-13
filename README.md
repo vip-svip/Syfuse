@@ -1030,20 +1030,35 @@ bash tools/verify_deliverable.sh "F:/Ai/Syfuse-完美提示词.md" 1000
 > 当前状态：`README.md` → **全部通过（WARN 2 项）**，退出码 0。原始输出见
 > [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 第 2 节。
 
-#### 本仓库对门禁的两处勘误（2.3）
+#### 本仓库对门禁的五处勘误（2.3）
 
-门禁脚本由提示词附录 A/B 交付，本项目在 M3 轮做过一次逐字节重同步，并对**附录自身的两个缺陷**
-出具勘误：
+门禁脚本由提示词附录 A/B 交付。本项目在 M3 轮做过一次逐字节重同步，并对**附录自身的缺陷**
+出具 5 条勘误（E1–E5）。全部登记在 `docs/errata/`，是 unified diff，可逐字核对。
 
-1. **附录 B 第 6 组是死检查（已修）**：`$PRUNE` 变量未加引号，被 bash 通配展开成几十条
+1. **E1 · 附录 B 第 6 组是死检查（已修）**：`$PRUNE` 变量未加引号，被 bash 通配展开成几十条
    `app/build/...` 路径，`find` 报 `paths must precede expression` 后**静默返回空**，
    而 `2>/dev/null` 吞掉了 stderr、`FOUND=0` 只报 WARN、退出码仍为 0 ——
-   也就是说这一组**从未真正执行过**。修法：pattern 逐个引号化；并把「找不到脚本可检查」
-   从 WARN 改成 **FAIL**，避免再次静默失效。
-2. **第 7 组在本仓库不生效（已知局限，未修）**：它依赖 `tools/sync_appendix.ps1`，
+   也就是说这一组**从未真正执行过**（修前报"未找到脚本"，修后列出 28 个脚本）。
+   修法：`read -ra` 切成数组，pattern 原样交给 `find`。
+2. **E2 / E3 · "找不到脚本可检查"由 WARN 改成 FAIL（已修）**：`.sh` 与 `.ps1` 两版都改。
+   「静默跳过」正是 E1 能长期潜伏的原因 —— 一个检查从"0 个对象"变成"28 个对象"却没人发现。
+3. **E4 · 头部注释与实际组数不符（已修）**：附录新增了第 7 组，但两版头部仍写「共 6 组」。
+4. **E5 · 第 6 组的判定逻辑在 Windows 上极慢（已修，见 T7）**：
+   取 BOM 用 `head -c 3 | od | tr | sed` 一条 4 进程流水线，CRLF 判定每个文件一次 `grep`，
+   文件名用 `$(basename)`。Git Bash 创建进程 ≈155 ms/次，于是 28 个文件要 ≈39 s。
+   改成 bash 内建读取（`read -N 3` / `read` 逐行扫 / `${s##*/}`）后降到 **13.3 s**，
+   而**检查的对象与断言条数完全不变**（仍是 28 个文件 × 2 条 = 56 条）。
+   替换前先做了 **12 组等价性矩阵**（BOM × CRLF × 长度）逐组核对新旧判定 ——
+   这个矩阵当场抓出了第一版的错误（Git Bash 的 `$(<file)` 会把末尾 `\r\n` 一起吃掉，
+   导致单行 CRLF 文件被误判为无 CRLF）。详见 `docs/EVIDENCE.md` §14.11。
+5. **第 7 组在本仓库不生效（已知局限，未修）**：它依赖 `tools/sync_appendix.ps1`，
    而该脚本是随母版分发的工具、不在附录 A/B/C 三件套里。缺失时第 7 组只报 WARN 跳过，
-   因此**附录与磁盘的漂移不会被自动拦住**。补偿手段：把逐字节比对作为一次性证据
-   固化进 `docs/EVIDENCE.md` §14，并在每次重同步时重跑。
+   因此**附录与磁盘的漂移不会被自动拦住**。补偿手段：`tests/run_appendix_sync.sh`
+   把"与附录的偏差必须逐字等于已登记勘误"写成断言（含 2 个变异测试），已挂进 CI。
+
+> 另有一处**本仓库自身**的缺陷（不属于附录）：`.gitattributes` 曾把 `.ps1` 定成 `eol=crlf`，
+> 入库 blob 是 LF、但每次 checkout 都写出 CRLF，会让"与附录逐字节相同"这条断言
+> 在 clone / CI 上必红而本地全绿。已改为 `eol=lf`，详见 `docs/EVIDENCE.md` §14.10。
 
 ### 任务拆分与耗时基线
 
@@ -1057,12 +1072,18 @@ Gradle 8.11.1 / Android SDK 35，**Gradle daemon 与 build cache 已预热**）�
 | `tests/run_kernel.sh`（Go，127 用例） | 19 s |
 | `tests/run_module_checks.sh` | 41 s |
 | `tools/scan_secrets.py` | 1 s |
-| `tools/verify_deliverable.sh README.md 300` | 10 s |
-| **门禁合计** | **≈169 s** |
+| `tools/verify_deliverable.sh README.md 300` | **13.3 s** |
+| `tools/verify_deliverable.ps1 -Path README.md -MinLines 300` | **0.96 s** |
+| `tests/run_appendix_sync.sh` | 14 s |
+| **门禁合计** | **≈227 s（3.8 min）** |
 
-结论：门禁总耗时不到 3 分钟，**不构成瓶颈**，因此本项目不为此更换环境或上 WSL2；
+结论：门禁总耗时不到 4 分钟，**不构成瓶颈**，因此本项目不为此更换环境或上 WSL2；
 提速的杠杆在任务粒度与并行度，不在工具链。任务单元（单元 / 范围 / 依赖 / 验收命令 /
 预计 / 状态 / 实测耗时）登记在仓库根目录的 `PROGRESS.md`。
+
+`.sh` 与 `.ps1` 两版门禁的耗时差 14 倍，不是算法差异而是**进程创建开销**：
+`.sh` 版过去每个文件要起 4 个子进程，`.ps1` 版用的是内建 `Get-Content`。
+按 2.11「先量再动」量清之后改成了 bash 内建读取（勘误 E5），并附 12 组等价性矩阵。
 
 ---
 

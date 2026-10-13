@@ -42,34 +42,39 @@ TASKS
 | **T1** 内核宿主 AAR 构建链路（gomobile + NDK 前置检查，产出 `kernel/out/*.aar`） | `src/tools/build_aar.sh`、`kernel/` | 无 | `bash src/tools/build_aar.sh` 产出 AAR 且 `unzip -l` 含 `libsyfuse.so` | 60 min | 受阻（无 gomobile + NDK） | — |
 | **T2** `proxies.start/stop/reload/select/urlTest` 在 Go 侧真实现（先出最小可跑隧道） | `src/cmd/syfused/proxies.go`、`src/cmd/syfused/main.go` | T1 | `syfused proxies start --profile p1` 起进程并 `status` 报 running | 60 min | 未开始 | — |
 | **T3** `UdsDataPlane` 接真实 `proxies.*`（去掉"未实现"路径）并补往返断言 | `engine/.../UdsDataPlane.kt`、`daemon-protocol/src/test/.../DaemonWireRoundTripTest.kt` | T2 | `:daemon-protocol:test` 全绿且新增隧道往返用例 | 45 min | 未开始 | — |
-| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/model/Models.kt`、`domain/node/ShareLink.kt`、`domain/src/test/.../ShareLinkTest.kt` | 无 | `:domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | 未开始 | — |
+| **T4** M4：节点模型 + 分享链接 round-trip（ss/ssr/vmess/vless/trojan/hysteria2/http/socks5） | `domain/node/ShareLink.kt`、`domain/src/test/.../node/ShareLinkTest.kt` | 无 | `source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'` 全绿（8 协议各 1 条往返） | 60 min | **未开始**（子代理尝试失败，见下） | — |
+| **T4a** 分享链接：`ss` / `ssr` / `vmess` 三协议 + 往返 | 同上（同一文件，故 T4a→T4b→T4c **串行**） | 无 | `:domain:test --tests '*ShareLink*'` 中这三个协议的用例全绿 | 30 min | 未开始 | — |
+| **T4b** 分享链接：`vless` / `trojan` / `hysteria2` 三协议 + 往返 | 同上 | T4a | 同上 | 30 min | 未开始 | — |
+| **T4c** 分享链接：`http`(`https`) / `socks5` + 全 8 协议往返矩阵 + 与 Go 侧行为对齐核对 | 同上 | T4b | 同上，且 8 协议往返矩阵全绿 | 30 min | 未开始 | — |
 | **T5** M4：订阅解析与 diff（`base64`/`clash yaml` 两种形态，diff 出新增/删除/改动） | `domain/node/Subscription.kt`、`domain/src/test/.../SubscriptionTest.kt` | T4 | `:domain:test --tests '*Subscription*'` 全绿 | 60 min | 未开始 | — |
 | **T6** M5：`tests/corpus` 语料扩容（38 → ≥120 条期望，覆盖 `$denyallow`/`$ctag`/`$removeparam`/`$redirect`/正则） | `tests/corpus/*.txt`、`tests/expect.tsv` | 无 | `:core:rule:test` + `go test ./syfuse/rule/` 两侧同时绿且条数一致 | 60 min | 未开始 | — |
 
 **并行批次**（2.11-B，常驻 3～6 个，同文件不并行）：
-- 批次 1（无依赖）：**T0 ✅ / T7 ✅ / T4 / T6**；**T1** 受阻（缺 gomobile + NDK）
-- 批次 2：**T2**（等 T1）→ **T3**（等 T2）→ **T5**（等 T4）
-- 已冻结：T7 只动 `tools/verify_deliverable.sh`（已完成）；T4 只新建 `domain/node/ShareLink.kt` + 测试；
-  T6 只动 `tests/corpus/*` + `tests/expect.tsv`。三者**无交集文件**，故可并行。
-- **并行纪律**：两个子代理被明确禁止运行 `tests/run_unit.sh`（它会先删 `*/build/test-results`，
-  并行时会互相破坏），改用定向的 `syfuse_gradle :<module>:test --tests '...'`；
-  集成级 `run_unit.sh` 由主代理串行跑一次收口。
+- 批次 1（无依赖）：**T0 ✅ / T7 ✅**；**T4a→T4b→T4c**（串行，同一文件）；**T6**；**T1** 受阻（缺 gomobile + NDK）
+- 批次 2：**T2**（等 T1）→ **T3**（等 T2）；**T5**（等 T4c）
+- 文件边界（已冻结）：T4a/b/c 只动 `domain/node/ShareLink.kt` 与其测试；
+  T6 只动 `tests/corpus/*` + `tests/expect.tsv`；两者**无交集**，可与 T4a 并行。
+- **并行纪律**：禁止并行跑 `tests/run_unit.sh`（它会先删 `*/build/test-results`，会互相破坏），
+  改用定向的 `syfuse_gradle :<module>:test --tests '...'`；集成级 `run_unit.sh` 由主代理串行跑一次收口。
+- **本轮的教训（见「第 5 轮」第 11 条）**：子代理**没有交付任何文件**。
+  下一轮改策略：由主代理自己做，并把 T4 拆成 T4a/b/c 三个 30 分钟的单元。
 
 ```
-NEXT_ACTION: T0 / T7 已完成。下一轮收口**批次 1 剩余两个单元**（已派给子代理并行执行，
-             产出必须由主代理复跑验收命令验证后才合入，不接受子代理自证）：
-             - **T4**（M4 节点模型 + 8 协议分享链接 round-trip）：
-               新建 `domain/src/main/kotlin/.../domain/node/ShareLink.kt` +
-               `domain/src/test/kotlin/.../domain/node/ShareLinkTest.kt`。
+NEXT_ACTION: T0 / T7 已完成并推送（`636983e`）。下一轮**由主代理自己做**批次 1 剩余单元，
+             **不再用子代理做代码单元**（本轮实测子代理零产出，见「第 5 轮」第 11 条）。
+             顺序（同文件，必须串行）：**T4a → T4b → T4c**，其间可并行做 **T6**（不同文件）。
+             - **T4a**：新建 `domain/src/main/kotlin/.../domain/node/ShareLink.kt`
+               （先只做 `ss` / `ssr` / `vmess`）+ `domain/src/test/.../domain/node/ShareLinkTest.kt`。
                **语义真相是 Go 侧 `src/syfuse/node.go`**（已有 8 个 parse 函数 + 28 个用例），
-               Kotlin 实现必须与它行为一致（含 `hy2` 别名、vmess 端口字符串/数字、
-               IPv6 必须带方括号、缺端口要拒绝等边界）。
+               Kotlin 实现必须与它行为一致（SIP002 base64 userinfo、legacy 全 base64、
+               percent-encoding、vmess 端口是字符串或数字、URL-safe base64、默认节点名等）。
                验收：`source tests/env.sh && syfuse_gradle :domain:test --tests '*ShareLink*'`。
-             - **T6**（M5 语料扩容 38 → ≥120 条期望）：只动 `tests/corpus/*` + `tests/expect.tsv`。
+             - **T4b**：追加 `vless`（含 REALITY）/ `trojan`（含 security=none）/ `hysteria2`（含 `hy2` 别名）。
+             - **T4c**：追加 `http`(`https`) / `socks5`，补全 8 协议往返矩阵，并与 Go 侧行为逐条核对。
+             - **T6**：`tests/corpus/*` + `tests/expect.tsv` 从 38 条期望扩到 ≥120 条。
                验收：`bash tests/run_kernel.sh` + `syfuse_gradle :core:rule:test` 两侧同时绿且条数一致。
-             两个子代理完成后：主代理串行跑一次 `bash tests/run_unit.sh` 取集成证据，
-             再跑全量门禁，然后提交。
-             之后进批次 2 的 **T5**（订阅解析与 diff，依赖 T4）；T2/T3 仍等 T1（缺 gomobile + NDK）。
+             收口：主代理串行跑 `bash tests/run_unit.sh` 取集成证据 → 全量门禁 → 提交 → 推送。
+             之后进批次 2 的 **T5**（订阅解析与 diff，依赖 T4c）；T2/T3 仍等 T1（缺 gomobile + NDK）。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）
           ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2
              （已在 PENDING-EXTERNAL.md 第 5 节写清"缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果"）
@@ -84,10 +89,11 @@ BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待
           ⑥ 【已解决】`git push` 曾因 GitHub 443 不可达失败三次；连通性恢复后已推送成功
              （`626befd..32f9fa5`，origin/main 与本地同步）。令牌用 `-c http.extraheader`
              逐命令注入，**未落盘**（未写 remote、未设 credential.helper）。
-ROUND_TIME: 第 5 轮 ≈3h05m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min，达标）
-UNIT: 第 5 轮完成 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 等价性矩阵）；
-      T4/T6 已派子代理并行执行，待主代理验证后合入
-LAST_UPDATED: 2026-10-13T05:55Z (2026-10-13 13:55 +0800)
+ROUND_TIME: 第 5 轮 ≈3h40m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min 达标；
+             子代理尝试 T4/T6 约 30 min 后确认零产出并终止）
+UNIT: 第 5 轮交付 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 12 组等价性矩阵）；
+      **T4/T6 未交付**（子代理零产出，已拆成 T4a/b/c 并改为主代理自做）
+LAST_UPDATED: 2026-10-13T06:20Z (2026-10-13 14:20 +0800)
 ```
 
 ---
@@ -160,12 +166,26 @@ LAST_UPDATED: 2026-10-13T05:55Z (2026-10-13 13:55 +0800)
    改完立刻被 `tests/run_appendix_sync.sh` 的登记清单拦住（`PASS=7 FAIL=1`），
    更新清单后回到 `PASS=8 FAIL=0` —— 这是该护栏第三次自证不是空断言。
 
-10. **T4 / T6 已派子代理并行执行**（2.11-B）。并行前冻结了文件边界：
-    T4 只新建 `domain/node/ShareLink.kt` + 测试，T6 只动 `tests/corpus/*` + `tests/expect.tsv`，
-    与 T7 的 `tools/verify_deliverable.sh` 无交集。并明确**禁止子代理运行
-    `tests/run_unit.sh`**（它会先删 `*/build/test-results`，并行时会互相破坏），
-    改用定向的 `syfuse_gradle :<module>:test --tests '...'`；
-    集成级 `run_unit.sh` 由主代理串行跑一次收口。子代理产出**必须由主代理复跑验收命令验证后才合入**。
+10. **T4 / T6 派子代理并行执行 —— 结果：零产出，策略失败，已换策略**。
+    并行前做了该做的准备：冻结文件边界（T4 只新建 `domain/node/ShareLink.kt` + 测试，
+    T6 只动 `tests/corpus/*` + `tests/expect.tsv`，与 T7 无交集）、明确禁止子代理运行
+    `tests/run_unit.sh`（它会先删 `*/build/test-results`，并行会互相破坏）、
+    要求交回"文件哈希 + 验收命令原始输出 + 改动清单"。
+    **但两个子代理最终没有交付任何文件**：`git status` 干净、`domain/node/` 不存在、
+    `tests/corpus/` 仍是 1 个文件 2002 字节、`expect.tsv` 仍是 47 行、
+    全仓库找不到任何 `*ShareLink*`。（只有 `.gradle/` 缓存被动过，说明它们确实跑过 Gradle。）
+    按 2.11-I 红线，**如实标记为未交付，不计入任何进度**。
+    换策略（2.11「单元超过预计 2 倍就停下换策略」）：
+    ① 下一轮**由主代理自己做**，不再把代码单元外包；
+    ② 把 T4 从 60 min 拆成 **T4a / T4b / T4c** 三个 30 min 单元（按协议分三批，同一文件故串行）；
+    ③ T6 保持独立，可与 T4a 并行（不同文件）。
+    这一条同时也是对"常驻 3～6 个子代理"这条提速手段的**有度量的反例**：
+    在需要严格遵循仓库既有约定、且产出必须逐条对照另一个语言实现的单元上，
+    子代理的返工/零产出风险高于收益。记下来，下次别再踩。
+
+11. **本轮收口**：提交 4 个 commit 并全部推送成功
+    （`8928de6` M3 改动集 / `a002e8c` T0 重同步 / `32f9fa5` .gitattributes / `636983e` T7），
+    `origin/main` 与本地同步。
 
 ---
 

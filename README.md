@@ -1047,7 +1047,7 @@ bash tools/verify_deliverable.sh "F:/Ai/Syfuse-完美提示词.md" 1000
    取 BOM 用 `head -c 3 | od | tr | sed` 一条 4 进程流水线，CRLF 判定每个文件一次 `grep`，
    文件名用 `$(basename)`。Git Bash 创建进程 ≈155 ms/次，于是 28 个文件要 ≈39 s。
    改成 bash 内建读取（`read -N 3` / `read` 逐行扫 / `${s##*/}`）后降到 **13.3 s**，
-   而**检查的对象与断言条数完全不变**（仍是 28 个文件 × 2 条 = 56 条）。
+   而**检查的对象与断言条数完全不变**（仍是 26 个 `.sh` × 2 条 + 2 个 `.ps1` × 1 条 = 54 条）。
    替换前先做了 **12 组等价性矩阵**（BOM × CRLF × 长度）逐组核对新旧判定 ——
    这个矩阵当场抓出了第一版的错误（Git Bash 的 `$(<file)` 会把末尾 `\r\n` 一起吃掉，
    导致单行 CRLF 文件被误判为无 CRLF）。详见 `docs/EVIDENCE.md` §14.11。

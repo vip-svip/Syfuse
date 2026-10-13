@@ -12,6 +12,7 @@ import (
 
 	"github.com/vip-svip/syfuse/src/internal/conn"
 	"github.com/vip-svip/syfuse/src/internal/ipc"
+	"github.com/vip-svip/syfuse/src/internal/leak"
 	"github.com/vip-svip/syfuse/src/internal/netprobe"
 	"github.com/vip-svip/syfuse/src/syfuse"
 )
@@ -556,5 +557,23 @@ func handleTraffic(pm *proxyManager) ipc.Handler {
 			return conn.Stats{}, nil
 		}
 		return pm.engine.Tracker().Stats(), nil
+	}
+}
+
+// handleLeakCheck 实现 M12 的 leak.check 方法：一键防泄漏自检。
+// 报告 JSON 直接来自 internal/leak 的 Report（字段冻结见该包）。
+// 各维度的开关先全开；探测不可用的维度在报告里记 skip，
+// 不让单点探测失败拖垮整个自检。
+func handleLeakCheck() ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		probe := leak.NewRealProbe()
+		checker, err := leak.NewChecker(probe)
+		if err != nil {
+			return nil, err
+		}
+		return checker.Run(leak.Config{
+			CheckDNS: true, CheckIPv6: true, CheckSTUN: true, CheckQUIC: true,
+			CheckIPEcho: true, CheckSplit: true, CheckSystem: true,
+		}), nil
 	}
 }

@@ -65,6 +65,8 @@ object DaemonProtocol {
         // 数据与统计（M9）：连接跟踪器（conn.Tracker）经 dataplane
         // 记录每条真实连接，connections 报快照、traffic 报聚合 —— 两者同源。
         "connections", "traffic",
+        // 防泄漏（M12）：leak.check 一键自检，报告来自 internal/leak。
+        "leak.check",
     )
 
     /**
@@ -80,7 +82,6 @@ object DaemonProtocol {
     val PENDING_METHODS: Map<String, String> = mapOf(
         "filter.stats" to "M10",
         "hook.status" to "M11",
-        "leak.report" to "M12",
         "leak.fix" to "M12",
         "config.reload" to "M5",
     )

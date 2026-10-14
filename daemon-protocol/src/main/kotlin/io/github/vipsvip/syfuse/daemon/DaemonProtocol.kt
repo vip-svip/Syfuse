@@ -98,9 +98,10 @@ object DaemonProtocol {
      * `proxies.*` 曾经整组在这张表里（M3 隧道未实现）。现在隧道已实现，
      * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
-    val PENDING_METHODS: Map<String, String> = mapOf(
-        "config.reload" to "M5",
-    )
+    // M14：全部 UDS 方法已实现，此表清空。
+    // 若未来新增未实现方法，按  恢复此表，
+    // 两侧契约测试会自动比对。
+    val PENDING_METHODS: Map<String, String> = mapOf()
 }
 
 /** 一次调用。字段名与 Go 侧 `ipc.Request` 一一对应。 */

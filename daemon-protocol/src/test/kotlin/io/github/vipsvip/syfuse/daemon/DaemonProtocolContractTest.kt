@@ -180,7 +180,9 @@ class DaemonProtocolContractTest {
     @Test
     fun `待实现方法与里程碑映射与 Go 侧一致`() {
         val go = goPendingMethods()
-        assertThat(go).isNotEmpty()
+        // M14：全部 UDS 方法已实现，pending 表两侧都必须清空。
+        // 若未来新增未实现方法，此表恢复非空——两侧仍须一致。
+        assertThat(go).isEmpty()
         assertThat(DaemonProtocol.PENDING_METHODS).isEqualTo(go)
     }
 
@@ -191,7 +193,7 @@ class DaemonProtocolContractTest {
         // 这里**独立**数一遍 Go 源码里 `{"名字",` 的形态，确保一条都没漏。
         // （`{"rotated": true}` 这类 map 字面量因为名字后面跟的是 `:` 而不是 `,`，不会被算进来。）
         val declared = extractAll(mainGo, Regex("\\{\"([a-zA-Z.]+)\",")).toSet()
-        assertThat(declared).isNotEmpty()
+        // pending 表清零后两侧都必须是空集（若恢复非空仍须相等）。
         assertThat(goPendingMethods().keys).isEqualTo(declared)
     }
 

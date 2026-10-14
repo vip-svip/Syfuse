@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
+
+	"github.com/vip-svip/syfuse/src/internal/logx"
 
 	"github.com/vip-svip/syfuse/src/internal/ipc"
 	"github.com/vip-svip/syfuse/src/internal/script"
@@ -15,6 +18,77 @@ import (
 
 func scriptStore(p Paths) (*script.DiskStore, error) {
 	return script.OpenDiskStore(filepath.Join(p.DataDir, "scripts"))
+}
+
+// scriptScheduler 是 daemon 内共享的 cron 调度器（cmdDaemon 起循环，
+// UDS 方法读执行历史——同一个实例才能看到同一份记录）。
+var (
+	scriptSchedulerOnce sync.Once
+	scriptScheduler     *script.Scheduler
+)
+
+// schedulerFor 返回（并按需创建）daemon 级调度器。
+func schedulerFor(p Paths, log *logx.Logger) *script.Scheduler {
+	scriptSchedulerOnce.Do(func() {
+		store, err := scriptStore(p)
+		if err != nil {
+			log.Error("脚本调度器初始化失败: %v", err)
+			return
+		}
+		scriptScheduler = script.NewScheduler(store, func(title, content string) {
+			log.Info("[脚本通知] %s: %s", title, content)
+		})
+	})
+	return scriptScheduler
+}
+
+// StartScriptScheduler 起每分钟一次的调度循环（daemon 生命周期内常驻）。
+// 返回 stop 函数；循环内的错误只记日志，绝不让调度器拖垮守护进程。
+func StartScriptScheduler(p Paths, log *logx.Logger) (stop func()) {
+	sch := schedulerFor(p, log)
+	if sch == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				runs, err := sch.RunDue()
+				if err != nil {
+					log.Error("cron 调度失败: %v", err)
+					continue
+				}
+				for _, r := range runs {
+					if r.Err != "" {
+						log.Error("cron 脚本 %s 失败: %s", r.Name, r.Err)
+					} else {
+						log.Info("cron 脚本 %s 执行完成 耗时=%s", r.Name, r.Elapsed.Round(time.Millisecond))
+					}
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// handleScriptsRecent 暴露 cron 执行历史（调试控制台）。
+func handleScriptsRecent(p Paths, log *logx.Logger) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		sch := schedulerFor(p, log)
+		if sch == nil {
+			return map[string]any{"recent": []script.CronRun{}}, nil
+		}
+		recent := sch.Recent()
+		if recent == nil {
+			recent = []script.CronRun{}
+		}
+		return map[string]any{"recent": recent}, nil
+	}
 }
 
 // handleScriptsList 列出全部脚本（含原文，供编辑器）。

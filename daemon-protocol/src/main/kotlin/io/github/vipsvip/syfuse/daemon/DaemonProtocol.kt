@@ -73,6 +73,7 @@ object DaemonProtocol {
         // 脚本系统（M7）：引擎 internal/script（goja 沙箱），run 支持试跑草稿。
         "scripts.run", "scripts.list", "scripts.save",
         "scripts.delete", "scripts.toggle", "scripts.order",
+        "scripts.recent",
     )
 
     /**

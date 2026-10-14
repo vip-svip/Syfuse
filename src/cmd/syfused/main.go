@@ -239,6 +239,10 @@ func cmdDaemon(paths Paths) int {
 		}
 	}()
 
+	// cron 脚本调度循环（M7）：每分钟扫一次到点任务。
+	stopScheduler := StartScriptScheduler(paths, log)
+	defer stopScheduler()
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
@@ -392,6 +396,7 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("scripts.delete", handleScriptsDelete(paths))
 	srv.Handle("scripts.toggle", handleScriptsToggle(paths))
 	srv.Handle("scripts.order", handleScriptsOrder(paths))
+	srv.Handle("scripts.recent", handleScriptsRecent(paths, log))
 
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))

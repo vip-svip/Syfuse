@@ -398,6 +398,9 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("scripts.order", handleScriptsOrder(paths))
 	srv.Handle("scripts.recent", handleScriptsRecent(paths, log))
 
+	// 过滤引擎（M10）：stats 来自 internal/filter 的规则集统计。
+	srv.Handle("filter.stats", handleFilterStats(paths))
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))
@@ -410,7 +413,6 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"filter.stats", "M10"},
 		{"hook.status", "M11"}, {"leak.fix", "M12"},
 		{"config.reload", "M5"},
 	} {

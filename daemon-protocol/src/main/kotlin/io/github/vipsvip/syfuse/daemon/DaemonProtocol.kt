@@ -74,6 +74,8 @@ object DaemonProtocol {
         "scripts.run", "scripts.list", "scripts.save",
         "scripts.delete", "scripts.toggle", "scripts.order",
         "scripts.recent",
+        // 过滤引擎（M10）：internal/filter，P0 语法（锚定/hosts/dnsmasq/优先级链）。
+        "filter.stats",
     )
 
     /**
@@ -87,7 +89,6 @@ object DaemonProtocol {
      * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
     val PENDING_METHODS: Map<String, String> = mapOf(
-        "filter.stats" to "M10",
         "hook.status" to "M11",
         "leak.fix" to "M12",
         "config.reload" to "M5",

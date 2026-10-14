@@ -6,10 +6,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/vip-svip/syfuse/src/internal/filter"
 	"github.com/vip-svip/syfuse/src/internal/logx"
 
 	"github.com/vip-svip/syfuse/src/internal/ipc"
@@ -281,4 +283,28 @@ func handleScriptsRun(p Paths) ipc.Handler {
 // timeDuration 毫秒转 time.Duration。
 func timeDuration(ms int64) time.Duration {
 	return time.Duration(ms) * time.Millisecond
+}
+
+// filterEngine 是 daemon 级过滤引擎单例（后续接规则源加载；当前从
+// <DataDir>/filter_rules.txt 读规则集，无文件即空规则集）。
+var (
+	filterEngineOnce sync.Once
+	filterEngine     *filter.Engine
+)
+
+func filterEngineFor(p Paths) *filter.Engine {
+	filterEngineOnce.Do(func() {
+		filterEngine = &filter.Engine{}
+		if data, err := os.ReadFile(filepath.Join(p.DataDir, "filter_rules.txt")); err == nil {
+			filterEngine.Load(string(data))
+		}
+	})
+	return filterEngine
+}
+
+// handleFilterStats 实现 M10 的 filter.stats：规则集统计口径。
+func handleFilterStats(p Paths) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		return filterEngineFor(p).Stats(), nil
+	}
 }

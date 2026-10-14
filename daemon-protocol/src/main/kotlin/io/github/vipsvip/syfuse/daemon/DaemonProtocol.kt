@@ -84,6 +84,8 @@ object DaemonProtocol {
         "hook.status",
         // 防泄漏一键修复（M12）：报告→修复计划→配置 upsert。
         "leak.fix",
+        // 配置热重载（M5 收尾）：过滤/通知规则原子换新。
+        "config.reload",
     )
 
     /**

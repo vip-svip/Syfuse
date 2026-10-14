@@ -289,21 +289,40 @@ func timeDuration(ms int64) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// filterEngine 是 daemon 级过滤引擎单例（后续接规则源加载；当前从
-// <DataDir>/filter_rules.txt 读规则集，无文件即空规则集）。
+// filterHolder 是可热重载的过滤引擎（config.reload 换规则集，
+// 读侧经 Engine 自身的 RWMutex 无锁）。
 var (
-	filterEngineOnce sync.Once
-	filterEngine     *filter.Engine
+	filterMu     sync.RWMutex
+	filterEngine *filter.Engine
 )
 
 func filterEngineFor(p Paths) *filter.Engine {
-	filterEngineOnce.Do(func() {
+	filterMu.RLock()
+	e := filterEngine
+	filterMu.RUnlock()
+	if e != nil {
+		return e
+	}
+	filterMu.Lock()
+	defer filterMu.Unlock()
+	if filterEngine == nil {
 		filterEngine = &filter.Engine{}
 		if data, err := os.ReadFile(filepath.Join(p.DataDir, "filter_rules.txt")); err == nil {
 			filterEngine.Load(string(data))
 		}
-	})
+	}
 	return filterEngine
+}
+
+// reloadFilter 重新加载过滤规则集（config.reload 调用）。
+func reloadFilter(p Paths) filter.Stats {
+	filterMu.Lock()
+	defer filterMu.Unlock()
+	filterEngine = &filter.Engine{}
+	if data, err := os.ReadFile(filepath.Join(p.DataDir, "filter_rules.txt")); err == nil {
+		filterEngine.Load(string(data))
+	}
+	return filterEngine.Stats()
 }
 
 // handleFilterStats 实现 M10 的 filter.stats：规则集统计口径。
@@ -367,22 +386,33 @@ func handleBackupRestore(p Paths) ipc.Handler {
 	}
 }
 
-// notifyFilterFor 是 daemon 级通知净化器单例（<DataDir>/notify_keywords.conf）。
+// notifyHolder 是可热重载的通知净化器（config.reload 换规则）。
 var (
-	notifyFilterOnce sync.Once
-	notifyFilter     *notify.Filter
-	notifyStats      *notify.Stats
+	notifyMu     sync.RWMutex
+	notifyFilter *notify.Filter
+	notifyStats  *notify.Stats
 )
 
 func notifyFilterFor(p Paths) *notify.Filter {
-	notifyFilterOnce.Do(func() {
-		text := ""
-		if data, err := os.ReadFile(filepath.Join(p.DataDir, "notify_keywords.conf")); err == nil {
-			text = string(data)
-		}
-		notifyFilter, notifyStats = notify.Parse(text)
-	})
+	notifyMu.RLock()
+	f := notifyFilter
+	notifyMu.RUnlock()
+	if f != nil {
+		return f
+	}
+	notifyMu.Lock()
+	defer notifyMu.Unlock()
+	reloadNotifyLocked(p)
 	return notifyFilter
+}
+
+// reloadNotifyLocked 重载通知规则（调用方持锁或首次初始化）。
+func reloadNotifyLocked(p Paths) {
+	text := ""
+	if data, err := os.ReadFile(filepath.Join(p.DataDir, "notify_keywords.conf")); err == nil {
+		text = string(data)
+	}
+	notifyFilter, notifyStats = notify.Parse(text)
 }
 
 // handleNotifyTest 实现 M13 的 notify.test：给定包名/标题/正文，
@@ -404,10 +434,30 @@ func handleNotifyTest(p Paths) ipc.Handler {
 			resp["rule"] = m.Rule
 			resp["line"] = m.Line
 		}
+		notifyMu.RLock()
 		if notifyStats != nil {
 			resp["stats"] = *notifyStats
 		}
+		notifyMu.RUnlock()
 		return resp, nil
+	}
+}
+
+// handleConfigReload 实现 M5 收尾的 config.reload：从磁盘重载全部
+// 可热更资产（过滤规则/通知规则），返回各项重载结果。
+// 不中断连接：引擎/净化器都是指针级原子替换。
+func handleConfigReload(p Paths) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		fs := reloadFilter(p)
+		notifyMu.Lock()
+		reloadNotifyLocked(p)
+		ns := *notifyStats
+		notifyMu.Unlock()
+		return map[string]any{
+			"filter":      fs,
+			"notify":      ns,
+			"reloaded_at": time.Now().UTC().Format(time.RFC3339),
+		}, nil
 	}
 }
 

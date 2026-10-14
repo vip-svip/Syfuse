@@ -275,15 +275,6 @@ class DaemonWireRoundTripTest {
         assertThat(error.technical).contains(DaemonErrorCode.UNAUTHORIZED)
     }
 
-    @Test
-    fun `已注册但未实现的方法返回明确里程碑而不是未知方法`() = runBlocking {
-        val error = fail(client.call("config.reload"))
-        // 必须是"未实现 + 计划里程碑"，而不是 unknown_method ——
-        // 后者会被翻译成"模块不认识这个请求，可能是版本不匹配"，把用户引错方向。
-        assertThat(error.technical).contains("未实现")
-        assertThat(error.technical).contains("M5")
-        assertThat(error.technical).doesNotContain(DaemonErrorCode.UNKNOWN_METHOD)
-    }
 
     // 用例名里**不能出现双引号**：Kotlin 会用反引号里的名字生成 .class 文件名，
     // 而 Windows 的文件名不允许 " * ? < > | : —— 会直接炸成

@@ -412,6 +412,9 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// Hook 框架检测（M11）：路径探测，无框架给降级说明。
 	srv.Handle("hook.status", handleHookStatus())
 
+	// 配置热重载（M5 收尾）：过滤/通知规则从磁盘原子换新。
+	srv.Handle("config.reload", handleConfigReload(paths))
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))
@@ -423,9 +426,7 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 尚未实现的方法：注册但返回明确错误。
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
-	for _, m := range []struct{ name, milestone string }{
-		{"config.reload", "M5"},
-	} {
+	for _, m := range []struct{ name, milestone string }{} {
 		name, milestone := m.name, m.milestone
 		srv.Handle(name, func(json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("方法 %q 尚未实现（计划里程碑 %s）", name, milestone)

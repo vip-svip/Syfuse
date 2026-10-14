@@ -65,6 +65,28 @@
 
 ---
 
+## English Summary
+
+**Syfuse** is a superset of Shadowrocket for Android: a native Compose proxy
+client plus a KernelSU/Magisk module that provides system-level capabilities.
+The module and the app can work independently.
+
+- **Tunnel**: local SOCKS5 inbound → rule-based routing (proxy/direct/reject)
+- **Rules & filter**: cross-language rule corpus; AGH/uBO filter engine
+  (domain trie, regex, scopes, priority chain, hot reload)
+- **Scripts**: vendored goja (ECMAScript) sandbox with QX/Surge/Loon-style
+  API surface, cron scheduler, HTTP rewrite hooks
+- **MITM**: on-demand leaf certificates, host list, Apple .mobileconfig export
+- **Leak prevention**: 7-dimension checker with one-click config fixes
+- **Notification filter / network block / backup & restore**: engine-level
+  complete, wired via UDS
+
+Status: milestone M0–M12 complete, M14 (polish) in progress. 352 Go tests +
+Kotlin contract tests green. See "功能可用性报告" for the item-by-item
+availability matrix (device-dependent items are explicitly marked).
+
+Build: `./package.sh` (requires Android SDK/NDK). Module zip lands in `dist/`.
+
 ## 功能可用性报告
 
 **这是本文档最重要的一节。** 状态只有三种：

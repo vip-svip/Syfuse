@@ -277,11 +277,11 @@ class DaemonWireRoundTripTest {
 
     @Test
     fun `已注册但未实现的方法返回明确里程碑而不是未知方法`() = runBlocking {
-        val error = fail(client.call("leak.fix"))
+        val error = fail(client.call("config.reload"))
         // 必须是"未实现 + 计划里程碑"，而不是 unknown_method ——
         // 后者会被翻译成"模块不认识这个请求，可能是版本不匹配"，把用户引错方向。
         assertThat(error.technical).contains("未实现")
-        assertThat(error.technical).contains("M12")
+        assertThat(error.technical).contains("M5")
         assertThat(error.technical).doesNotContain(DaemonErrorCode.UNKNOWN_METHOD)
     }
 

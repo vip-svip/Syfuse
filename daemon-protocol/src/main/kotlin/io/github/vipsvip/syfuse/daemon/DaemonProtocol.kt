@@ -82,6 +82,8 @@ object DaemonProtocol {
         "notify.test",
         // Hook 框架检测（M11）：internal/hook，路径探测+降级说明。
         "hook.status",
+        // 防泄漏一键修复（M12）：报告→修复计划→配置 upsert。
+        "leak.fix",
     )
 
     /**
@@ -95,7 +97,6 @@ object DaemonProtocol {
      * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
     val PENDING_METHODS: Map<String, String> = mapOf(
-        "leak.fix" to "M12",
         "config.reload" to "M5",
     )
 }

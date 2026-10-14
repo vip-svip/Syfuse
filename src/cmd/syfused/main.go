@@ -388,6 +388,7 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 
 	// 防泄漏（M12）：一键自检。
 	srv.Handle("leak.check", handleLeakCheck())
+	srv.Handle("leak.fix", handleLeakFix(paths))
 
 	// 脚本系统（M7）：试跑 + 存储管理，语义见 internal/script。
 	srv.Handle("scripts.run", handleScriptsRun(paths))
@@ -423,7 +424,6 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"leak.fix", "M12"},
 		{"config.reload", "M5"},
 	} {
 		name, milestone := m.name, m.milestone

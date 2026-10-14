@@ -588,6 +588,37 @@ func handleLeakCheck() ipc.Handler {
 	}
 }
 
+// handleLeakFix 实现 M12 的 leak.fix 方法：跑一次自检 → 生成修复计划
+// → 应用配置级修复（upsert 进 syfuse.conf）；动作级项原样返回由
+// UI 提示用户。响应：{report, plan, applied}。
+func handleLeakFix(p Paths) ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		probe := leak.NewRealProbe()
+		checker, err := leak.NewChecker(probe)
+		if err != nil {
+			return nil, err
+		}
+		report := checker.Run(leak.Config{
+			CheckDNS: true, CheckIPv6: true, CheckSTUN: true, CheckQUIC: true,
+			CheckIPEcho: true, CheckSplit: true, CheckSystem: true,
+		})
+		plan := leak.FixPlan(report)
+		applied, err := leak.ApplyConf(p.ConfPath, plan)
+		if err != nil {
+			return nil, err
+		}
+		// 配置级应用成功后，标记 plan 里对应项。
+		for i := range plan {
+			for _, k := range applied {
+				if plan[i].Key == k {
+					plan[i].Applied = true
+				}
+			}
+		}
+		return map[string]any{"report": report, "plan": plan, "applied": applied}, nil
+	}
+}
+
 // netBlockFor 把 internal/filter 的判定接成 dataplane 的 NetBlock 钩子：
 // 域名走 filter 优先级链（||锚定/hosts/dnsmasq/正则），字面 IP 走
 // ipcidr 规则源的 MatchIP。规则集为空时全部放行（零开销路径）。

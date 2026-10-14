@@ -70,6 +70,9 @@ object DaemonProtocol {
         // 模块管理（M7a）：存储层在 internal/module，冲突检测随 merge 返回。
         "modules.list", "modules.import", "modules.delete",
         "modules.toggle", "modules.order", "modules.merge",
+        // 脚本系统（M7）：引擎 internal/script（goja 沙箱），run 支持试跑草稿。
+        "scripts.run", "scripts.list", "scripts.save",
+        "scripts.delete", "scripts.toggle", "scripts.order",
     )
 
     /**

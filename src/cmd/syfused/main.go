@@ -385,6 +385,14 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 防泄漏（M12）：一键自检。
 	srv.Handle("leak.check", handleLeakCheck())
 
+	// 脚本系统（M7）：试跑 + 存储管理，语义见 internal/script。
+	srv.Handle("scripts.run", handleScriptsRun(paths))
+	srv.Handle("scripts.list", handleScriptsList(paths))
+	srv.Handle("scripts.save", handleScriptsSave(paths))
+	srv.Handle("scripts.delete", handleScriptsDelete(paths))
+	srv.Handle("scripts.toggle", handleScriptsToggle(paths))
+	srv.Handle("scripts.order", handleScriptsOrder(paths))
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))

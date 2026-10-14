@@ -80,6 +80,8 @@ object DaemonProtocol {
         "backup.create", "backup.restore",
         // 通知净化（M13）：internal/notify，关键字/包名/正则。
         "notify.test",
+        // Hook 框架检测（M11）：internal/hook，路径探测+降级说明。
+        "hook.status",
     )
 
     /**
@@ -93,7 +95,6 @@ object DaemonProtocol {
      * 它们移到 [IMPLEMENTED_METHODS]；留在这里的都是真正还没做的。
      */
     val PENDING_METHODS: Map<String, String> = mapOf(
-        "hook.status" to "M11",
         "leak.fix" to "M12",
         "config.reload" to "M5",
     )

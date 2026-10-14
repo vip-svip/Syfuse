@@ -408,6 +408,9 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 通知净化（M13）：notify.test 单条试跑。
 	srv.Handle("notify.test", handleNotifyTest(paths))
 
+	// Hook 框架检测（M11）：路径探测，无框架给降级说明。
+	srv.Handle("hook.status", handleHookStatus())
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))
@@ -420,7 +423,7 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 为什么注册而不是不注册：让 App 拿到"未实现 + 计划"，
 	// 而不是 "unknown_method" —— 后者会被误当成版本不匹配。
 	for _, m := range []struct{ name, milestone string }{
-		{"hook.status", "M11"}, {"leak.fix", "M12"},
+		{"leak.fix", "M12"},
 		{"config.reload", "M5"},
 	} {
 		name, milestone := m.name, m.milestone

@@ -14,6 +14,7 @@ import (
 
 	"github.com/vip-svip/syfuse/src/internal/backup"
 	"github.com/vip-svip/syfuse/src/internal/filter"
+	"github.com/vip-svip/syfuse/src/internal/hook"
 	"github.com/vip-svip/syfuse/src/internal/logx"
 	"github.com/vip-svip/syfuse/src/internal/notify"
 
@@ -407,5 +408,21 @@ func handleNotifyTest(p Paths) ipc.Handler {
 			resp["stats"] = *notifyStats
 		}
 		return resp, nil
+	}
+}
+
+// handleHookStatus 实现 M11 的 hook.status：框架检测与降级说明。
+// Android 真机探测 /data/adb/... 真实路径；非 Android 环境（沙盒/测试）
+// 全部不存在 → 返回空列表 + 降级说明，语义与"无 root 设备"一致。
+func handleHookStatus() ipc.Handler {
+	return func(json.RawMessage) (any, error) {
+		d, err := hook.NewDetector(func(path string) bool {
+			_, err := os.Stat(path)
+			return err == nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return d.Detect(), nil
 	}
 }

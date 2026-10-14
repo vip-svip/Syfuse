@@ -61,15 +61,17 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 19 轮（2026-10-14）M12 收尾 + M14 打磨起步（d9b7399 已
-推送）：leak/fix.go（FixPlan 修复计划 + ApplyConf 配置 upsert，4 测试），
-leak.fix UDS 转正（pending 表仅剩 config.reload）；README 功能可用性
-报告刷新至当前里程碑（19 项可用/5 项不可用含真机依赖说明）。
-kernel-checks PASS 用例=352 失败=0。
-下一轮第一个动作：**M14 续**——config.reload（M5 收尾，pending 清零）、
-打包校验门禁（module.prop/manifest/二进制产物一致性）、双语与
-功能覆盖度对照表终稿。真机依赖项（开屏/UID 分流/Hook 本体/面板）列
-真机验证清单。
+NEXT_ACTION: 第 20 轮（2026-10-14）M14 收尾完成（d80ca71+f531e8b 已
+推送）：config.reload 热重载（过滤/通知规则原子换新，filter/notify
+单例改 RWMutex 可重载持有）——**pending 表清零，全部 UDS 方法已实现**；
+tests/run_package_check.sh 打包校验门禁 23 项全过（module.prop/骨架/
+三 ABI APK/SHA-256 自校验/zip 内守护进程）；README 英文摘要（双语）；
+Kotlin PENDING 清空对齐（契约测试转为两侧空集相等语义）。
+kernel-checks PASS 用例=352 失败=0；package-check PASS=23。
+**里程碑状态：M0-M14 全部完成（Go/模块侧）。剩余全部为真机验证项**
+——按 README 功能可用性报告执行：隧道/分流/过滤/脚本/MITM 证书/
+防泄漏/通知净化的真机接线，开屏跳过，UID 分流，Hook 注入本体，
+局域网面板。
 
 ```
 

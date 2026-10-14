@@ -61,15 +61,15 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 16 轮（2026-10-14）M10 P1 过滤引擎 + M13 备份还原落地：
-d3bb16d（正则/作用域修饰符/MatchCtx/四格式嗅探+ipcidr+MatchIP，filter
-测试 10→18 条）；977bc0c（internal/backup ZIP+SHA-256 清单防半还原 +
-backup.create/restore UDS，5 条测试）。kernel-checks PASS 用例=335 失败=0。
-【待推送】d3bb16d、977bc0c 两笔在本地 —— github.com 持续不可达
-（Connection reset，goproxy.cn 正常），恢复后立即 push origin main。
-下一轮第一个动作：推送积压提交；然后 **M13 续**——通知净化 Go 侧
-（notify_keywords.conf 关键字/包名/正则引擎）+ 网络封禁接线
-（filter.MatchIP 进 dataplane 决策）。
+NEXT_ACTION: 第 17 轮（2026-10-14）M13 通知净化 + 网络封禁接线落地
+（5d162f5）：internal/notify 引擎（关键字/pkg:包名/re:正则/pkg-only 拦整包，
+7 条测试）；dataplane Options.NetBlock 钩子（路由决策前判定，域名+字面
+IP）；Engine.SetNetBlock + netBlockFor 接 internal/filter 域名链与
+MatchIP；notify.test UDS。kernel-checks PASS 用例=342 失败=0。
+M13 剩余（需真机/Hook）：开屏跳过、UID 精细分流、局域网面板、CLI 子
+命令补全。下一轮第一个动作：**M11 Hook 框架检测**（Zygisk/LSPosed/
+APatch 探测 + hook.status UDS）或 M14 打磨（双语/README/打包校验），
+按可离线推进的优先。
 
 ```
 

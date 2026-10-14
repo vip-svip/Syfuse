@@ -44,6 +44,7 @@ kotlin {
 
 dependencies {
     api(project(":domain"))
+    implementation(project(":daemon-protocol"))
     // ui 的 ViewModel 通过构造注入消费数据层契约（ConfigRepository / AppSettingsDataStore）。
     // 这是**接口**依赖，不是内核具体类型依赖：内核可替换性（9.2）由 domain:engine.EngineController
     // 这一层保证，UI 不感知任何内核实现类。缺此依赖会让 Hilt/KSP 在 :ui 里得到

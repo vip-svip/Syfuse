@@ -61,15 +61,14 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 9 轮（2026-10-13）M7a 模块系统 + M8 CA 测试落地并推送
-（7762e7b..0fd3c3e）：
-  ① 549adeb：internal/module 解析/行级分段级开关/合并冲突检测/存储
-（19 测试）+ modules.* 6 个 UDS 方法，Kotlin 表同步；
-  ② 0fd3c3e：mitm/ca_test.go 11 条（生成/加载/指纹/落盘/防御拷贝），
-kernel-checks 用例=281 失败=0。
-下一轮第一个动作：**M8 续**——证书签发（issue 叶证书+Verify 链）、
-hosts/mobileconfig 导出、pin 提示；之后 M7b goja 脚本引擎移植
-（从 goproxy.cn 拉 vendor 进 src/internal/third_party/）。
+NEXT_ACTION: 第 10 轮（2026-10-14）M8 续落地并推送（b40935e..40a588a）：
+issue.go 叶证书签发+VerifyChain、hosts.go 解密主机列表（通配语义矩阵）、
+mobileconfig.go Apple 描述文件导出；mitm 包测试 11→18 条，
+kernel-checks 用例=288 失败=0。已参考 vip-svip/SY 仓库（原版 SY 模块，
+mitm_rules.conf 为 AdGuard 风格内容规则，与解密主机列表是两层）。
+下一轮第一个动作：**M7b goja 脚本引擎移植**——从 goproxy.cn 拉
+github.com/dop251/goja 模块 zip 解包进 src/internal/third_party/goja
+（纯 stdlib，无外部依赖），随后脚本系统沙箱接入。
 注意：子代理 429 限流至 2026-10-14 16:24 UTC+8，期间大单元由主代理自做。
 BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）  
 ② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2  

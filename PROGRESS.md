@@ -61,14 +61,15 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 15 轮（2026-10-14）M10 P0 过滤引擎落地（d38057c 已推送）：
-docs/filter_gap.md 全语法差距调研（P0/P1/P2 分层）+ internal/filter
-（解析报错到行号/域名 Trie 含子域继承与首段通配/hosts+dnsmasq 精确表/
-$important/$badfilter 后置过滤/严格优先级链/热重载/filter.stats UDS）；
-10 条测试全绿，性能冒烟 1 万条编译 4ms；kernel-checks PASS 用例=323。
-下一轮第一个动作：**M10 P1**——正则规则集 + URL 锚定 + 作用域修饰符
-（$domain/$client/$ctag/$3p/$1p/$denyallow）+ 四种规则源格式
-（domain/ipcidr/classical/mrs）与规则源加载链路。
+NEXT_ACTION: 第 16 轮（2026-10-14）M10 P1 过滤引擎 + M13 备份还原落地：
+d3bb16d（正则/作用域修饰符/MatchCtx/四格式嗅探+ipcidr+MatchIP，filter
+测试 10→18 条）；977bc0c（internal/backup ZIP+SHA-256 清单防半还原 +
+backup.create/restore UDS，5 条测试）。kernel-checks PASS 用例=335 失败=0。
+【待推送】d3bb16d、977bc0c 两笔在本地 —— github.com 持续不可达
+（Connection reset，goproxy.cn 正常），恢复后立即 push origin main。
+下一轮第一个动作：推送积压提交；然后 **M13 续**——通知净化 Go 侧
+（notify_keywords.conf 关键字/包名/正则引擎）+ 网络封禁接线
+（filter.MatchIP 进 dataplane 决策）。
 
 ```
 

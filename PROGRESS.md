@@ -61,34 +61,15 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 10 轮（2026-10-14）M8 续落地并推送（b40935e..40a588a）：
-issue.go 叶证书签发+VerifyChain、hosts.go 解密主机列表（通配语义矩阵）、
-mobileconfig.go Apple 描述文件导出；mitm 包测试 11→18 条，
-kernel-checks 用例=288 失败=0。已参考 vip-svip/SY 仓库（原版 SY 模块，
-mitm_rules.conf 为 AdGuard 风格内容规则，与解密主机列表是两层）。
-下一轮第一个动作：**M7b goja 脚本引擎移植**——从 goproxy.cn 拉
-github.com/dop251/goja 模块 zip 解包进 src/internal/third_party/goja
-（纯 stdlib，无外部依赖），随后脚本系统沙箱接入。
-注意：子代理 429 限流至 2026-10-14 16:24 UTC+8，期间大单元由主代理自做。
-BLOCKERS: ① 无 Android 真机 → M3 的 VpnService TUN 与全部真机项待外部验证（PENDING-EXTERNAL.md）  
-② 无 gomobile + NDK → T1（内核宿主 AAR）受阻，`src/tools/build_aar.sh` 实测 exit 2  
-（已在 PENDING-EXTERNAL.md 第 5 节写清"缺什么 / 怎么补 / 补齐后跑哪条命令 / 期望结果"）  
-③ 仓库 private + 无 Release → 自更新链路（18.5）与 update.json 匿名可达性无法验证  
-④ 【T0 已解决】门禁脚本与提示词附录不一致 —— 已逐字节重同步并修掉附录自身 4 处缺陷  
-（E1–E4），两版门禁 exit 0、需求 38/38。**遗留一条已知局限**：门禁第⑦组  
-依赖随母版分发的 tools/sync_appendix.ps1，本仓库没有它 → 那一组只 WARN 跳过。  
-已用 tests/run_appendix_sync.sh（含 3 次变异/护栏自证）做补偿控制并挂进 CI。  
-⑤ 【T7 已解决】第⑥组在 Windows 上 54 s → 改成 bash 内建读取后 **13.3 s**，  
-检查对象与断言条数不变（26 个 `.sh` × 2 条 + 2 个 `.ps1` × 1 条 = 54 条）。前置的 12 组等价性矩阵  
-当场抓出第一版的错误（$(<file) 会吃掉末尾 CRLF），详见 EVIDENCE §14.11。  
-⑥ 【已解决】`git push` 曾因 GitHub 443 不可达失败三次；连通性恢复后已推送成功  
-（`626befd..32f9fa5`，origin/main 与本地同步）。令牌用 `-c http.extraheader`  
-逐命令注入，**未落盘**（未写 remote、未设 credential.helper）。  
-ROUND_TIME: 第 5 轮 ≈3h40m（T0 ≈95 min 超预计 3.2 倍；T7 ≈35 min 达标；  
-子代理尝试 T4/T6 约 30 min 后确认零产出并终止）  
-UNIT: 第 5 轮交付 T0（重同步 + 勘误 E1–E4 + 补偿控制）与 T7（勘误 E5 + 12 组等价性矩阵）；  
-**T4/T6 未交付**（子代理零产出，已拆成 T4a/b/c 并改为主代理自做）  
-LAST_UPDATED: 2026-10-13T21:55Z (2026-10-13 21:55 +0800)
+NEXT_ACTION: 第 11 轮（2026-10-14）M8 续 + M7b goja 移植双双落地：
+  ① 40a588a：mitm 叶证书签发/验签链/解密主机列表/mobileconfig 导出，
+mitm 测试 11→18 条；② 914e225：goja 引擎 + regexp2v2 + sourcemap +
+xtext 子集全部 vendored 进 internal/third_party（import 改写为内部路径，
+profiler 禁用存根替换 pprof），冒烟测试验证求值/沙箱前置/异常定位，
+kernel-checks PASS 用例=291 失败=0（零依赖断言仍过）。已参考 vip-svip/SY
+原版模块仓库。下一轮第一个动作：**脚本系统接入**——internal/script 包
+（goja 沙箱：超时/内存上限/API 面 $request/$response/$done/$httpClient/
+$persistentStore/$notify），之后脚本类型（http/rule/cron/dns/general）。
 
 ```
 

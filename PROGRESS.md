@@ -61,12 +61,14 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 14 轮（2026-10-14）daemon 接线 cron 调度完成（2499d92 已
-推送）：StartScriptScheduler 每分钟 RunDue 常驻循环（结果进日志，错误不
-拖垮守护进程）+ scripts.recent UDS 方法 + Kotlin 表同步；M7 脚本系统全链
-闭环（引擎/存储/UDS/调度/挂钩链）。
-下一轮第一个动作：**M10 过滤内核**——docs/filter_gap.md 语法差距调研
-（AGH/uBO Lite/SY-Fusion 对齐第 6 部分），随后 filter 引擎 Go 侧实现。
+NEXT_ACTION: 第 15 轮（2026-10-14）M10 P0 过滤引擎落地（d38057c 已推送）：
+docs/filter_gap.md 全语法差距调研（P0/P1/P2 分层）+ internal/filter
+（解析报错到行号/域名 Trie 含子域继承与首段通配/hosts+dnsmasq 精确表/
+$important/$badfilter 后置过滤/严格优先级链/热重载/filter.stats UDS）；
+10 条测试全绿，性能冒烟 1 万条编译 4ms；kernel-checks PASS 用例=323。
+下一轮第一个动作：**M10 P1**——正则规则集 + URL 锚定 + 作用域修饰符
+（$domain/$client/$ctag/$3p/$1p/$denyallow）+ 四种规则源格式
+（domain/ipcidr/classical/mrs）与规则源加载链路。
 
 ```
 

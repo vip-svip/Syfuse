@@ -61,15 +61,14 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 11 轮（2026-10-14）M8 续 + M7b goja 移植双双落地：
-  ① 40a588a：mitm 叶证书签发/验签链/解密主机列表/mobileconfig 导出，
-mitm 测试 11→18 条；② 914e225：goja 引擎 + regexp2v2 + sourcemap +
-xtext 子集全部 vendored 进 internal/third_party（import 改写为内部路径，
-profiler 禁用存根替换 pprof），冒烟测试验证求值/沙箱前置/异常定位，
-kernel-checks PASS 用例=291 失败=0（零依赖断言仍过）。已参考 vip-svip/SY
-原版模块仓库。下一轮第一个动作：**脚本系统接入**——internal/script 包
-（goja 沙箱：超时/内存上限/API 面 $request/$response/$done/$httpClient/
-$persistentStore/$notify），之后脚本类型（http/rule/cron/dns/general）。
+NEXT_ACTION: 第 12 轮（2026-10-14）脚本系统接入落地（485bcb9 已推送）：
+internal/script 引擎（goja 沙箱：超时看门狗/栈深上限/受控 httpClient/
+persistentStore/notify/request/response + Match 触发条件）+ DiskStore +
+scripts.* 6 个 UDS 方法 + Kotlin 表同步；14 条测试全绿，
+kernel-checks PASS 用例=305 失败=0。
+下一轮第一个动作：**cron 调度器 + 脚本挂钩点**——daemon 内定时跑 cron
+类型脚本、dataplane 命中 Match 的 http 脚本改写/拒绝接线；
+之后 M10 过滤内核（filter.stats + AGH/uBO 语法差距调研 docs/filter_gap.md）。
 
 ```
 

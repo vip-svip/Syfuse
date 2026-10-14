@@ -61,13 +61,13 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 12 轮（2026-10-14）脚本系统接入落地（485bcb9 已推送）：
-internal/script 引擎（goja 沙箱：超时看门狗/栈深上限/受控 httpClient/
-persistentStore/notify/request/response + Match 触发条件）+ DiskStore +
-scripts.* 6 个 UDS 方法 + Kotlin 表同步；14 条测试全绿，
-kernel-checks PASS 用例=305 失败=0。
-下一轮第一个动作：**cron 调度器 + 脚本挂钩点**——daemon 内定时跑 cron
-类型脚本、dataplane 命中 Match 的 http 脚本改写/拒绝接线；
+NEXT_ACTION: 第 13 轮（2026-10-14）cron 调度器 + http 脚本挂钩链落地
+（b70ffed 已推送）：internal/script 补齐 cron.go（标准 5 段表达式 + Next
+剪枝 + Scheduler 注入时钟确定性测试）与 hook.go（HookChain：body 叠加/
+headers 合并/reject 短路/错误续跑/IncHits）；脚本包 22 条测试全绿，
+kernel-checks PASS 用例=313 失败=0。
+下一轮第一个动作：**daemon 接线 Scheduler**——service 启动时起调度循环
+（每分钟 RunDue），scripts.recent UDS 方法暴露执行历史；
 之后 M10 过滤内核（filter.stats + AGH/uBO 语法差距调研 docs/filter_gap.md）。
 
 ```

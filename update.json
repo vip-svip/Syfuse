@@ -1,9 +1,9 @@
 {
-  "version": "v0.1.0",
+  "version": "0.1.0",
   "versionCode": 1,
-  "zipUrl": "https://github.com/vip-svip/Syfuse/releases/latest/download/syfuse-0.1.0.zip",
+  "zipUrl": "https://github.com/vip-svip/Syfuse/releases/download/v0.1.0/syfuse-0.1.0.zip",
   "changelog": "https://raw.githubusercontent.com/vip-svip/Syfuse/main/CHANGELOG.md",
   "description": "Syfuse · 融合代理 —— 原生 Compose 代理客户端 + KernelSU/Magisk 特权层。v0.1.0 为骨架版本：规则引擎（Kotlin/Go 双实现共用同一套语料）、设置框架、配置编解码与特权层命令白名单已可测；内核 AAR 与守护进程已随包构建，隧道数据面尚未接通。",
   "_comment": "本文件的 zipUrl 依赖仓库公开（已满足）与 Release 已创建（已满足，见 https://github.com/vip-svip/Syfuse/releases/tag/v0.1.0）。",
-  "sha256": "d7fc8c02d066b18e79e59c7a80a14401ac8b9b1f31395fed03a85dcd4890f14c"
+  "sha256": "72ff08bc1fd1c445594699254aed7c435e971d423ccf9bc4a6bcda744361ae2f"
 }

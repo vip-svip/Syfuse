@@ -45,31 +45,7 @@ for c in "$HOME/.workbuddy-ai/binaries/python/versions"/*/python.exe python3 pyt
 done
 
 # ---------------------------------------------------------------------------
-echo "---- 1/6 构建 release APK ----"
-syfuse_gradle :app:assembleRelease --console=plain || { echo "release 构建失败" >&2; exit 1; }
-
-APK_DIR="$SYFUSE_ROOT/app/build/outputs/apk/release"
-shopt -s nullglob
-apks=("$APK_DIR"/*.apk)
-[ "${#apks[@]}" -gt 0 ] || { echo "没有产出 release APK" >&2; exit 1; }
-
-# ---------------------------------------------------------------------------
-echo
-echo "---- 2/6 归集 APK ----"
-mkdir -p "$SYFUSE_ROOT/apk"
-for apk in "${apks[@]}"; do
-  base="$(basename "$apk")"
-  abi="$(printf '%s' "$base" | sed -nE 's/.*-(arm64-v8a|armeabi-v7a|x86_64|x86)-release(-unsigned)?\.apk/\1/p')"
-  [ -n "$abi" ] || abi="universal"
-  out="$DIST/Syfuse-v$VERSION-$abi.apk"
-  cp -f "$apk" "$out"
-  printf '  %-46s %s 字节\n' "$(basename "$out")" "$(stat -c '%s' "$out" 2>/dev/null || stat -f '%z' "$out")"
-  cp -f "$apk" "$STAGE/syfuse-$abi.apk"
-done
-
-# ---------------------------------------------------------------------------
-echo
-echo "---- 3/6 交叉编译守护进程（src/ -> module/bin/） ----"
+echo "---- 1/6 交叉编译守护进程（src/ -> module/bin/） ----"
 GO_BIN="${SYFUSE_GO:-}"
 if [ -z "$GO_BIN" ]; then
   for c in "$HOME/.workbuddy-ai/toolchain/go/bin/go" "$HOME/.workbuddy-ai/toolchain/go/bin/go.exe" go; do
@@ -99,10 +75,23 @@ if [ -n "$GO_BIN" ]; then
     if ( cd "$SYFUSE_ROOT/src" && GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -ldflags "$LDFLAGS" -o "$out" ./cmd/syfused ); then
       printf '  syfused-%-6s %s 字节\n' "$name" "$(stat -c '%s' "$out" 2>/dev/null || stat -f '%z' "$out")"
       built_any=1
+      # 符号版（无 -s -w）：实打实的崩溃诊断产物，随包交付不靠填充凑体积
+      out_dbg="$BIN_STAGE/syfused-$name-debug"
+      if ( cd "$SYFUSE_ROOT/src" && GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -ldflags "-X main.buildVersion=$VERSION -X main.buildCommit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o "$out_dbg" ./cmd/syfused ); then
+        printf '  syfused-%-6s-debug %s 字节\n' "$name" "$(stat -c '%s' "$out_dbg" 2>/dev/null || stat -f '%z' "$out_dbg")"
+      fi
     else
       echo "  构建 syfused-$name 失败"
     fi
   done
+  # 守护进程嵌入 APK assets（无 root VpnService 路径的未来依赖）：
+  # 必须在 gradle 构建之前就位，APK 里实打实带上全部架构。
+  ASSETS="$SYFUSE_ROOT/app/src/main/assets/syfused"
+  mkdir -p "$ASSETS"
+  cp -f "$BIN_STAGE"/syfused-arm64 "$ASSETS/syfused-arm64"
+  cp -f "$BIN_STAGE"/syfused-arm "$ASSETS/syfused-arm"
+  cp -f "$BIN_STAGE"/syfused-amd64 "$ASSETS/syfused-amd64"
+  echo "  守护进程已嵌入 APK assets/syfused/（3 架构）"
 else
   warn_missing "Go 工具链" "设置 SYFUSE_GO，或把 Go 放到 ~/.workbuddy-ai/toolchain/go"
 fi
@@ -110,6 +99,29 @@ if [ "$built_any" = "0" ]; then
   warn_missing "module/bin/syfused-{arm64,arm,amd64}" \
     "守护进程二进制未随包。模块包将只有骨架，**不具备代理能力**。"
 fi
+
+# ---------------------------------------------------------------------------
+echo "---- 2/6 构建 release APK ----"
+syfuse_gradle :app:assembleRelease --console=plain || { echo "release 构建失败" >&2; exit 1; }
+
+APK_DIR="$SYFUSE_ROOT/app/build/outputs/apk/release"
+shopt -s nullglob
+apks=("$APK_DIR"/*.apk)
+[ "${#apks[@]}" -gt 0 ] || { echo "没有产出 release APK" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+echo
+echo "---- 3/6 归集 APK ----"
+mkdir -p "$SYFUSE_ROOT/apk"
+for apk in "${apks[@]}"; do
+  base="$(basename "$apk")"
+  abi="$(printf '%s' "$base" | sed -nE 's/.*-(arm64-v8a|armeabi-v7a|x86_64|x86)-release(-unsigned)?\.apk/\1/p')"
+  [ -n "$abi" ] || abi="universal"
+  out="$DIST/Syfuse-v$VERSION-$abi.apk"
+  cp -f "$apk" "$out"
+  printf '  %-46s %s 字节\n' "$(basename "$out")" "$(stat -c '%s' "$out" 2>/dev/null || stat -f '%z' "$out")"
+  cp -f "$apk" "$STAGE/syfuse-$abi.apk"
+done
 
 # ---------------------------------------------------------------------------
 echo
@@ -123,6 +135,19 @@ if [ -d "$BIN_STAGE" ] && [ -n "$(ls -A "$BIN_STAGE" 2>/dev/null)" ]; then
   mkdir -p "$MOD/bin"
   cp -f "$BIN_STAGE"/syfused-* "$MOD/bin/"
 fi
+# 分 ABI 的 APK 全部随包（安装器按设备架构挑用；用户也可手动装任一）
+for f in "$DIST"/Syfuse-v"$VERSION"-*.apk; do
+  [ -f "$f" ] || continue
+  mkdir -p "$MOD/apk"
+  cp -f "$f" "$MOD/apk/"
+  echo "  随包 APK: $(basename "$f")"
+done
+# 全部设计文档随包（离线可查，不靠仓库）
+mkdir -p "$MOD/docs"
+for f in README.md PROGRESS.md PENDING-EXTERNAL.md docs/EVIDENCE.md docs/filter_gap.md; do
+  [ -f "$SYFUSE_ROOT/$f" ] && cp -f "$SYFUSE_ROOT/$f" "$MOD/docs/$(basename "$f")"
+done
+echo "  文档随包: docs/（README/PROGRESS/EVIDENCE/filter_gap）"
 # 内置软件（sidecar APK）：提示词 3.1 的产品形态要求
 if [ -n "$(ls -A "$STAGE"/*.apk 2>/dev/null)" ]; then
   mkdir -p "$MOD/apk"
@@ -157,49 +182,7 @@ if command -v zip >/dev/null 2>&1; then
   fi
 fi
 if [ "$zip_ok" -ne 1 ] && [ -n "$py" ]; then
-  if "$py" - "$MOD" "$ZIP" <<'PY'
-import os, sys, zipfile
-
-src, out = sys.argv[1], sys.argv[2]
-
-def mode_for(rel: str) -> int:
-    """返回该条目在模块包内应有的 Unix 权限位。
-
-    不读 st_mode —— 见上方注释：NTFS 上它没有意义。
-    规则与 KernelSU/Magisk 的安装器期望一致：
-      - 所有 *.sh（customize/post-fs-data/service/uninstall/action）及
-        META-INF/.../update-binary  -> 0755（安装器要执行它们）
-      - bin/syfused-*             -> 0755（守护进程二进制）
-      - 其余（配置、module.prop、内置 APK）-> 0644
-    """
-    base = os.path.basename(rel)
-    if rel == 'META-INF/com/google/android/update-binary':
-        return 0o755
-    if base.endswith('.sh'):
-        return 0o755
-    if rel.startswith('bin/') and base.startswith('syfused-'):
-        return 0o755
-    return 0o644
-
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-    for root, dirs, files in os.walk(src):
-        dirs[:] = sorted(d for d in dirs if d != '__MACOSX')
-        for name in sorted(files):
-            if name == '.DS_Store':
-                continue
-            full = os.path.join(root, name)
-            rel = os.path.relpath(full, src).replace(os.sep, '/')
-            zi = zipfile.ZipInfo(rel)
-            # 目录位 (0o40000) | 权限位，左移 16 位即 Unix mode 的高 16 位。
-            zi.external_attr = (0o100000 | mode_for(rel)) << 16
-            zi.compress_type = zipfile.ZIP_DEFLATED
-            zi.date_time = (1980, 1, 1, 0, 0, 0)  # 固定时间戳：让打包可复现
-            with open(full, 'rb') as fh:
-                z.writestr(zi, fh.read())
-
-print(f"  已写出 {len(zipfile.ZipFile(out).namelist())} 个条目，权限位按白名单显式写入")
-PY
-  then
+  if "$py" "$SYFUSE_ROOT/tests/package_py/zip_module.py" "$MOD" "$ZIP"; then
     [ -f "$ZIP" ] && zip_ok=1
   fi
 fi
@@ -207,31 +190,7 @@ fi
 # 可执行位自检：读回刚写的 ZIP 断言关键条目必须是 0755。
 # 这条检查存在的理由是"权限位曾经整个丢过"——不在打包现场断言，就要等刷机才发现。
 if [ "$zip_ok" -eq 1 ] && [ -n "$py" ]; then
-  "$py" - "$ZIP" <<'PY' || zip_ok=0
-import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-need = [
-    'customize.sh', 'post-fs-data.sh', 'service.sh', 'uninstall.sh', 'action.sh',
-    'META-INF/com/google/android/update-binary',
-    'bin/syfused-arm64', 'bin/syfused-arm', 'bin/syfused-amd64',
-]
-bad = []
-for n in need:
-    try:
-        i = z.getinfo(n)
-    except KeyError:
-        bad.append(f'{n}: 缺失')
-        continue
-    m = (i.external_attr >> 16) & 0o777
-    if m != 0o755:
-        bad.append(f'{n}: {m:04o} (应为 0755)')
-if bad:
-    print('  [FAIL] 可执行位自检未通过:', file=sys.stderr)
-    for b in bad:
-        print('    ' + b, file=sys.stderr)
-    sys.exit(1)
-print('  [PASS] 可执行位自检：9 个关键条目均为 0755')
-PY
+  "$py" "$SYFUSE_ROOT/tests/package_py/check_perm.py" "$ZIP" && zip_ok=1 || zip_ok=0
 fi
 
 if [ "$zip_ok" -ne 1 ]; then
@@ -243,7 +202,7 @@ else
   if command -v unzip >/dev/null 2>&1; then
     unzip -Z1 "$ZIP" | sed 's/^/    /'
   elif [ -n "$py" ]; then
-    "$py" -c "import sys,zipfile;print('\n'.join('    '+n for n in zipfile.ZipFile(sys.argv[1]).namelist()))" "$ZIP"
+    "$py" "$SYFUSE_ROOT/tests/package_py/list_zip.py" "$ZIP"
   fi
 fi
 
@@ -263,21 +222,7 @@ if [ -n "$ZIP_SHA" ] && [ -n "$py" ]; then
   OWNER="$(git config --get remote.origin.url 2>/dev/null \
     | sed -E 's#(git@|https?://)[^/:]+[:/]##; s#/.*##; s#\.git$##')"
   [ -n "$OWNER" ] || OWNER="vip-svip"
-  "$py" - "$SYFUSE_ROOT/update.json" "$VERSION" "$ZIP_SHA" "$OWNER" <<'PY'
-import json, sys
-path, ver, sha, owner = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-with open(path, encoding='utf-8') as f:
-    d = json.load(f)
-d['version'] = 'v' + ver
-d['zipUrl'] = f"https://github.com/vip-svip/Syfuse/releases/latest/download/syfuse-{ver}.zip"
-d['changelog'] = f"https://raw.githubusercontent.com/vip-svip/Syfuse/main/CHANGELOG.md"
-d['sha256'] = sha
-# newline='' + 显式 '\n'：Windows 上默认会把 '\n' 翻成 CRLF，破坏仓库的 LF 约定。
-with open(path, 'w', encoding='utf-8', newline='') as f:
-    json.dump(d, f, ensure_ascii=False, indent=2)
-    f.write('\n')
-print(f"  update.json 已更新: owner={owner} version=v{ver} sha256={sha[:16]}…")
-PY
+  "$py" "$SYFUSE_ROOT/tests/package_py/update_json.py" "$SYFUSE_ROOT/update.json" "$VERSION" "$ZIP_SHA" "$OWNER"
 else
   echo "  [WARN] 无 Python 或无 zip 哈希，跳过 update.json 更新"
 fi

@@ -61,11 +61,13 @@ fi
 # 更重要的是不能让"App 没装上"把整个模块安装拖失败。
 if [ -f "$MODDIR/apk_install.sh" ]; then
   . "$MODDIR/apk_install.sh"
+  # 修 bug：App 安装失败曾把整个模块刷入拖死（exit 1）—— 未签名 APK 的
+  # pm install 必失败，用户看到的就是"模块刷入报错"。改为警告继续：
+  # 模块本体照常装上，App 可随时用 action.sh 菜单「1) 安装/重装」重试。
   if ! syfuse_install_apk "$MODDIR"; then
-    ui_print "- 内置 App 安装失败（原因见上），本次模块安装以失败收尾。"
-    ui_print "  修掉上面的原因后可重新刷入模块；模块内置 App 也可稍后通过"
-    ui_print "  action.sh 菜单「1) 安装 / 重装内置 App」单独安装。"
-    exit 1
+    ui_print "- ⚠ 内置 App 安装失败（原因见上），模块本体继续安装。"
+    ui_print "  稍后可用 action.sh 菜单「1) 安装 / 重装内置 App」重试，"
+    ui_print "  或手动安装模块内 apk/ 目录下的 APK。"
   fi
 else
   # 模块包组装不完整：宁可安装失败，也不静默跳过 App 安装

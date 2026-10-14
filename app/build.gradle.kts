@@ -56,9 +56,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // 无密钥时保持未签名，而不是用 debug 密钥冒充发布产物
+            // 无正式密钥时回退 debug 签名：**可安装性优先**——未签名 APK
+            // 连 pm install 都过不了（NO_CERTIFICATES），会让模块刷入整链失败。
+            // 正式发布签名通过 SYFUSE_KEYSTORE_PATH 等 env 注入（CI Secret）。
             if (!System.getenv("SYFUSE_KEYSTORE_PATH").isNullOrBlank()) {
                 signingConfig = signingConfigs.getByName("releaseFromEnv")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
         debug {

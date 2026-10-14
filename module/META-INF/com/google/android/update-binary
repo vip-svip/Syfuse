@@ -1,27 +1,21 @@
 #!/sbin/sh
 # ============================================================
-#  Magisk / KernelSU 模块安装器入口（update-binary）
+#  Magisk / KernelSU / APatch 模块安装器入口（update-binary）
 #
-#  自 Magisk 20.x 起，update-binary 是 shell 脚本而非 ELF 二进制。
-#  本脚本的职责只有一件：加载 util_functions.sh 并调用 install_module，
-#  真正的安装逻辑在 customize.sh 中。
+#  - Magisk：加载官方 util_functions.sh 走 install_module（标准路径）。
+#  - KernelSU / APatch：没有 magisk 的 util_functions，此前直接
+#    require_new_magisk 退出 —— 用户看到的"刷入报错"就是这里。
+#    现改为内置最小安装：解压 zip 到 $MODPATH + 白名单权限 +
+#    提供安装器 shim 后 source customize.sh（其依赖的 ui_print /
+#    set_perm / abort 全部就位），三大管理器行为一致。
 # ============================================================
 
-#################
-# 初始化
-#################
 umask 022
-
-# 兼容两种安装器调用约定
 OUTFD=$2
 ZIPFILE=$3
 
 ui_print() { echo "$1"; }
-
-abort() {
-  ui_print "$1"
-  exit 1
-}
+abort() { ui_print "$1"; exit 1; }
 
 require_new_magisk() {
   ui_print "*******************************"
@@ -30,13 +24,55 @@ require_new_magisk() {
   exit 1
 }
 
-#########################
-# 加载 util_functions.sh
-#########################
+# ---------- Magisk 标准路径 ----------
+if [ -f /data/adb/magisk/util_functions.sh ]; then
+  mount /data 2>/dev/null
+  . /data/adb/magisk/util_functions.sh
+  install_module
+  exit 0
+fi
+
+# ---------- KernelSU / APatch 最小安装 ----------
 mount /data 2>/dev/null
 
-[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
-. /data/adb/magisk/util_functions.sh
+[ -n "$ZIPFILE" ] || abort "! 安装器未传入 ZIPFILE 参数"
+[ -f "$ZIPFILE" ] || abort "! 找不到安装包: $ZIPFILE"
 
-install_module
+MODPATH=/data/adb/modules/syfuse
+ui_print "- Syfuse 模块安装（KernelSU/APatch 路径）"
+ui_print "- 模块目录: $MODPATH"
+
+rm -rf "$MODPATH"
+mkdir -p "$MODPATH" || abort "! 无法创建模块目录"
+
+# 解压（busybox unzip 在 KSU/APatch 环境必有；没有则报错而不是装一半）
+if command -v unzip >/dev/null 2>&1; then
+  unzip -oqq "$ZIPFILE" -d "$MODPATH" || abort "! 解压失败"
+else
+  BB=$(command -v busybox)
+  [ -n "$BB" ] || abort "! 环境缺 unzip 且无 busybox"
+  "$BB" unzip -oqq "$ZIPFILE" -d "$MODPATH" || abort "! 解压失败"
+fi
+[ -f "$MODPATH/module.prop" ] || abort "! 解压后缺 module.prop（包损坏）"
+
+# META-INF 不属于模块本体
+rm -rf "$MODPATH/META-INF"
+
+# 白名单权限（与 package.sh 的打包白名单一致）
+chmod 0755 "$MODPATH"/*.sh 2>/dev/null
+chmod 0755 "$MODPATH/META-INF/com/google/android/update-binary" 2>/dev/null
+[ -d "$MODPATH/bin" ] && chmod 0755 "$MODPATH"/bin/syfused-* 2>/dev/null
+
+# 安装器 shim：customize.sh 依赖的函数与变量
+SKIPUNZIP=1
+set_perm() { chmod "$1" "$5" 2>/dev/null; chown "$2:$3" "$5" 2>/dev/null; }
+set_perm_recursive() {
+  chmod -R "$1" "$6" 2>/dev/null
+  chown -R "$2:$3" "$6" 2>/dev/null
+}
+
+# customize.sh 在 $MODPATH 就位后执行（本模块的安装钩子）
+[ -f "$MODPATH/customize.sh" ] && . "$MODPATH/customize.sh"
+
+ui_print "- 安装完成，重启设备后生效"
 exit 0

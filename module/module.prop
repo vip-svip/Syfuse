@@ -6,4 +6,4 @@ versionCode=1
 # 注意：本行指向仓库内文件，与 Release 是否存在无关。
 updateJson=https://raw.githubusercontent.com/vip-svip/Syfuse/main/update.json
 author=vip-svip
-description=Shadowrocket 超集：原生 Compose 代理客户端 + KernelSU/Magisk 模块。模块提供系统级能力（DNS/MITM/过滤/Hook），App 提供界面与配置，两者可各自独立工作。内核静态内置，卸载零残留。
+description=Shadowrocket 超集：透明代理 · 智能分流 · AGH/uBO 过滤 · 脚本引擎(goja 沙箱) · MITM · 防泄漏自检修复 · 通知净化 · 网络封禁 · 备份还原。App 与模块可各自独立工作，内核静态内置，卸载零残留。

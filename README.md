@@ -1,41 +1,60 @@
 # Syfuse · 融合代理
 
-> **一个 KernelSU / Magisk / APatch 模块**，模块内**内置 APK**。模块提供系统级能力
-> （透明代理 · DNS · MITM · 过滤 · 封禁 · Hook · 证书与 hosts 注入），
-> App 提供全部界面与配置。两者各自可独立工作，合起来是一个
-> **只能比 Shadowrocket 多、不能少**的客户端。
+> **Shadowrocket 超集，Android 原生实现。** 一个 KernelSU / Magisk / APatch 模块，
+> 模块内内置 APK。模块提供系统级能力（透明代理 · DNS · MITM · 过滤 · 封禁 ·
+> 脚本 · Hook · 证书与 hosts 注入），App 提供全部界面与配置。
+> 两者各自可独立工作，合起来是一个**只能比 Shadowrocket 多、不能少**的客户端。
 
 [![CI](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-M2%20%E7%95%8C%E9%9D%A2%E4%B8%8E%E8%AE%BE%E8%AE%A1%E7%B3%BB%E7%BB%9F-orange.svg)](#功能可用性报告)
+[![Status](https://img.shields.io/badge/status-M0--M14%20%E5%AE%8C%E6%88%90%20%C2%B7%20%E5%BE%85%E7%9C%9F%E6%9C%BA%E9%AA%8C%E8%AF%81-yellow.svg)](#功能可用性报告)
 
-> ⚠️ **当前状态：M2（App 骨架与视觉）进行中。代理内核未接入，代理上网不可用。**
-> 逐项状态见[功能可用性报告](#功能可用性报告)。本文档不夸大任何能力。
-> 跨轮进度真相见 [`PROGRESS.md`](PROGRESS.md)；待外部验证项见 [`PENDING-EXTERNAL.md`](PENDING-EXTERNAL.md)；
-> 门禁原始输出与性能数据见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
+> **当前状态：M0–M14 全部里程碑完成（引擎/守护进程/模块侧），353 项 Go 测试与
+> Kotlin 契约测试全绿。** 剩余工作为 Android 真机接线验证——逐项状态见
+> [功能可用性报告](#功能可用性报告)，不夸大任何能力。
+> 跨轮进度真相见 [`PROGRESS.md`](PROGRESS.md)；门禁原始输出见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
 
----
+## 特性一览
 
-## 目录
+- **隧道与分流**：本地 SOCKS5 入站，规则驱动 proxy / direct / reject；
+  跨语言规则语料 238 行两侧全绿
+- **过滤引擎（AGH + uBO）**：域名 Trie + 正则 + 作用域修饰符 + 严格优先级链
+  （重要放行 > 重要拦截 > 普通放行 > 普通拦截），热重载，1 万条规则编译 4ms
+- **脚本系统**：内置 goja（ECMAScript）沙箱——超时看门狗、受控网络出口、
+  QX / Surge / Loon 兼容 API 面；cron 定时任务；HTTP 改写挂钩
+- **模块系统**：解析 / 行级开关 / 多模块合并与冲突检测，`modules.*` 全套管理
+- **MITM 证书体系**：按需叶证书签发（30 天短效）、解密主机列表（通配/排除）、
+  Apple `.mobileconfig` 一键导出
+- **防泄漏**：DNS / IPv6 / STUN / QUIC / IP 回显 / 分流 / 系统层七维自检，
+  `leak.fix` 一键生成修复计划并应用配置级修复
+- **通知净化**：关键字 / 包名限定 / 正则；**网络封禁**：域名 + 字面 IP 连接层拦截
+- **备份还原**：ZIP + SHA-256 清单，防半还原
+- **热重载**：`config.reload` 原子换新过滤与通知规则，不中断连接
+- **零第三方依赖内核**：goja 等全部 vendored 进 `internal/third_party`，
+  `go.mod` 无 require、无 go.sum，依赖面完全可控
 
-- [定位与产品形态](#定位与产品形态)
-- [功能可用性报告](#功能可用性报告)
-- [功能覆盖度对照表](#功能覆盖度对照表)
-- [逐屏界面清单](#逐屏界面清单)
-- [架构](#架构)
-- [数据模型](#数据模型)
-- [syfuse.conf 键表](#syfuseconf-键表)
-- [规则语法全表](#规则语法全表)
-- [API 与 CLI](#api-与-cli)
-- [构建与自检](#构建与自检)
-- [性能预算与实测（第 11 部分）](#性能预算与实测第-11-部分)
-- [权限说明](#权限说明)
-- [风险清单](#风险清单)
-- [【待核实】项](#待核实项)
-- [常见问题](#常见问题)
-- [免责声明](#免责声明)
-- [致谢与许可](#致谢与许可)
-- [进度与外部依赖](#进度与外部依赖)
+## 安装
+
+1. 从 [Releases](https://github.com/vip-svip/Syfuse/releases) 下载模块 zip
+2. 在 KernelSU / Magisk / APatch 管理器中刷入
+3. 模块自带 APK 会被自动安装（`apk_install.sh`）；也可单独安装 `dist/` 下的分 ABI APK
+4. 打开 App，或在终端运行模块的 `action.sh` 音量键菜单（11 项，免 root 界面依赖）
+
+## 快速上手
+
+- **启动代理**：App 首页大开关，或 `ksu/magisk --execute action.sh`（守护进程模式）
+- **过滤规则**：规则文件放在 `<data>/filter_rules.txt`，App 内改完一键
+  `config.reload` 热生效
+- **脚本**：脚本编辑器支持草稿试跑（`scripts.run`），命中计数在调试页可见
+- **防泄漏自检**：防护页一键自检 → 修复计划 → 配置级修复自动写入
+
+## 文档
+
+- [功能可用性报告](#功能可用性报告) —— 逐项状态与证据（**最重要**）
+- [功能覆盖度对照表](#功能覆盖度对照表) —— 与 Shadowrocket 逐项对照
+- [架构](#架构) / [数据模型](#数据模型) / [syfuse.conf 键表](#syfuseconf-键表)
+- [规则语法全表](#规则语法全表) / [API 与 CLI](#api-与-cli)
+- [性能预算与实测](#性能预算与实测第-11-部分) / [风险清单](#风险清单)
 
 ---
 

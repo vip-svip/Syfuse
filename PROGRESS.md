@@ -61,15 +61,14 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 17 轮（2026-10-14）M13 通知净化 + 网络封禁接线落地
-（5d162f5）：internal/notify 引擎（关键字/pkg:包名/re:正则/pkg-only 拦整包，
-7 条测试）；dataplane Options.NetBlock 钩子（路由决策前判定，域名+字面
-IP）；Engine.SetNetBlock + netBlockFor 接 internal/filter 域名链与
-MatchIP；notify.test UDS。kernel-checks PASS 用例=342 失败=0。
-M13 剩余（需真机/Hook）：开屏跳过、UID 精细分流、局域网面板、CLI 子
-命令补全。下一轮第一个动作：**M11 Hook 框架检测**（Zygisk/LSPosed/
-APatch 探测 + hook.status UDS）或 M14 打磨（双语/README/打包校验），
-按可离线推进的优先。
+NEXT_ACTION: 第 18 轮（2026-10-14）M11 Hook 框架检测落地（68ccd78 已
+推送）：internal/hook——8 框架特征路径表（exists 注入零 I/O，沙盒
+确定性）、root 形态判定、InjectionCapable、无框架降级说明（规范 6.5
+三级降级语义）；hook.status UDS 从 pending 转正（非 Android 环境返回
+空列表+降级说明，与无 root 语义一致）；6 条测试。
+kernel-checks PASS 用例=348 失败=0。pending 表仅剩 leak.fix(M12)/
+config.reload(M5)。下一轮第一个动作：**M14 打磨**——README 覆盖度
+对照表 + 功能可用性报告 + 打包校验（可离线），随后 leak.fix 一键修复。
 
 ```
 

@@ -84,6 +84,8 @@ type compiled struct {
 	rewrites map[string]string
 	// badfilter 是被 $badfilter 关闭的规则集合（去修饰后的原文）。
 	badfilter map[string]bool
+	// p1 是 P1 层（正则/作用域/ipcidr），见 p1.go。
+	p1 *p1State
 	// stats 是编译概况。
 	Stats Stats
 }
@@ -99,6 +101,7 @@ type Stats struct {
 	Rewrites   int    `json:"rewrites"`    // hosts IP 重写 / dnsmasq local
 	Errors     int    `json:"errors"`      // 解析失败的行数
 	FirstError string `json:"first_error,omitempty"`
+	Ignored    int    `json:"ignored"` // DNS 层无语义但合法接受的修饰符规则
 }
 
 // ParseError 是单行解析失败的信息（报错到行号）。
@@ -131,15 +134,25 @@ func (e *Engine) Stats() Stats {
 	return e.current.Stats
 }
 
-// Match 对域名做过滤决策。
+// Match 对域名做过滤决策（无客户端上下文；作用域规则被跳过）。
 func (e *Engine) Match(host string) MatchResult {
+	return e.MatchCtx(host, "", nil)
+}
+
+// MatchCtx 带客户端上下文的过滤决策：$client=/$ctag= 作用域规则参与判定。
+// client 为空、tags 为 nil 时等价于 Match。
+func (e *Engine) MatchCtx(host, client string, tags []string) MatchResult {
 	e.mu.RLock()
 	c := e.current
 	e.mu.RUnlock()
 	if c == nil {
 		return MatchResult{Decision: NoMatch}
 	}
-	return c.match(lowerTrim(host))
+	var ctx *matchCtx
+	if client != "" || len(tags) > 0 {
+		ctx = &matchCtx{client: client, tags: tags}
+	}
+	return c.match(lowerTrim(host), ctx)
 }
 
 // compile 把文本编译成 compiled。
@@ -149,6 +162,7 @@ func compile(text string) *compiled {
 		exact:      map[string]struct{}{},
 		rewrites:   map[string]string{},
 		badfilter:  map[string]bool{},
+		p1:         &p1State{ipSet: map[string]bool{}},
 	}
 	type pendingRule struct {
 		normalized string // 去掉 $badfilter 后的规范形
@@ -174,6 +188,28 @@ func compile(text string) *compiled {
 			continue
 		}
 
+		// 正则行：/pattern/、/pattern/$mods、@@/pattern/…。
+		if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "@@/") {
+			if re, rr, perr := parseRegexRule(trimmed); perr == nil {
+				if rr.badfilter {
+					badfilterCount++
+					c.badfilter[rr.normalized] = true
+					continue
+				}
+				if rr.important {
+					c.Stats.Important++
+				}
+				if rr.allow {
+					c.Stats.AllowRules++
+					c.p1.regexAllow = append(c.p1.regexAllow, re)
+				} else {
+					c.Stats.BlockRules++
+					c.p1.regexSet = append(c.p1.regexSet, re)
+				}
+				continue
+			}
+			// 以 / 开头但不是合法正则行 → 落到普通解析（会得到行号错误）。
+		}
 		r, err := parseRule(trimmed)
 		if err != nil {
 			c.Stats.Errors++
@@ -198,6 +234,27 @@ func compile(text string) *compiled {
 		}
 		if r.important {
 			c.Stats.Important++
+		}
+		if r.ignoreDNS {
+			c.Stats.Ignored++
+		}
+		if r.client != "" || r.ctag != "" {
+			// 作用域规则：判定走 scopeRules（需客户端上下文）。
+			sr := &scopeRule{
+				normalized: r.normalized,
+				kind:       r.kind,
+				important:  r.important,
+				client:     r.client,
+				ctag:       r.ctag,
+				host:       r.host,
+			}
+			if r.allow {
+				sr.kind = kindAllow
+			}
+			c.p1.scopeRules = append(c.p1.scopeRules, sr)
+			// 作用域规则不能同时进 Trie/普通 pending：
+			// 否则无上下文时会被当成无条件规则。
+			continue
 		}
 		switch r.kind {
 		case kindHostRewrite, kindLocal:
@@ -267,39 +324,72 @@ type rule struct {
 	important  bool
 	badfilter  bool
 	allow      bool
+	client     string // $client= 值
+	ctag       string // $ctag= 值
+	ignoreDNS  bool   // 带 DNS 层无语义修饰符（$domain=/$3p/…）
 	normalized string // 去掉 $badfilter 后的规范形（badfilter 匹配用）
 	raw        string
 }
 
-// parseRule 解析单行。P0 只认锚定/纯域名/hosts/dnsmasq 四族 + 两个修饰符。
+// knownMods 是合法修饰符名集合（带值的形如 client=xxx 也按名匹配）。
+var knownMods = map[string]bool{
+	"important": true, "badfilter": true, "dnstype": true, "client": true,
+	"ctag": true, "domain": true, "3p": true, "1p": true,
+	"third-party": true, "first-party": true, "denyallow": true,
+	"dnsrewrite": true, "match-case": true, "all": true, "document": true,
+	"script": true, "image": true, "stylesheet": true, "xmlhttprequest": true,
+	"subdocument": true, "websocket": true, "webrtc": true, "ping": true,
+	"object": true, "media": true, "font": true, "other": true, "empty": true,
+	"popup": true, "mp4": true, "generichide": true, "specifichide": true,
+	"elemhide": true, "genericblock": true,
+}
+
+// splitMods 把行拆成主体与修饰符 map；ok=false 表示 $ 后不是修饰符段
+// （主体本身含 $，如正则里的量词 —— 这种行交给原样解析）。
+func splitMods(line string) (string, map[string]string, bool) {
+	i := strings.LastIndex(line, "$")
+	if i <= 0 {
+		return line, nil, true
+	}
+	mods := map[string]string{}
+	for _, m := range strings.Split(strings.ToLower(line[i+1:]), ",") {
+		if m == "" {
+			return line, nil, false
+		}
+		name, val := m, ""
+		if j := strings.Index(m, "="); j >= 0 {
+			name, val = m[:j], m[j+1:]
+		}
+		if !knownMods[name] {
+			return line, nil, false
+		}
+		mods[name] = val
+	}
+	return line[:i], mods, true
+}
+
+// parseRule 解析单行。P0 只认锚定/纯域名/hosts/dnsmasq 四族 + 修饰符。
 // 修饰符放在行尾 $ 后；`$` 前是主体。
 func parseRule(line string) (*rule, error) {
 	r := &rule{raw: line}
 	body := line
 
-	// 修饰符拆分：最后一个 $ 之后若全为已知修饰符列表，则视为修饰符段。
-	if i := strings.LastIndex(body, "$"); i > 0 {
-		mods := strings.Split(strings.ToLower(body[i+1:]), ",")
-		known := true
-		for _, m := range mods {
-			switch m {
-			case "important", "badfilter", "dnstype", "client", "ctag", "domain", "3p", "1p",
-				"third-party", "first-party", "denyallow", "dnsrewrite", "all", "document",
-				"script", "image", "stylesheet", "xmlhttprequest", "other", "empty":
+	if b, mods, ok := splitMods(line); ok {
+		body = b
+		for name, val := range mods {
+			switch name {
+			case "important":
+				r.important = true
+			case "badfilter":
+				r.badfilter = true
+			case "client":
+				r.client = val
+			case "ctag":
+				r.ctag = val
 			default:
-				known = false
+				// DNS 层无语义但合法：接受 + 忽略计数（规范 6.4 并集原则）。
+				r.ignoreDNS = true
 			}
-		}
-		if known {
-			for _, m := range mods {
-				switch m {
-				case "important":
-					r.important = true
-				case "badfilter":
-					r.badfilter = true
-				}
-			}
-			body = body[:i]
 		}
 	}
 

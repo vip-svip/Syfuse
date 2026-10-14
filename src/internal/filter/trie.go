@@ -126,7 +126,7 @@ func (n *trieNode) lookup(domain string) *lookupResult {
 //	重要放行 > 重要拦截 > 普通放行 > 普通拦截 > 未命中
 //
 // 多规则同级别命中时取"最具体"（Trie 链首）。exact/rewrites 先查精确表。
-func (c *compiled) match(host string) MatchResult {
+func (c *compiled) match(host string, ctx *matchCtx) MatchResult {
 	if host == "" {
 		return MatchResult{Decision: NoMatch}
 	}
@@ -138,21 +138,31 @@ func (c *compiled) match(host string) MatchResult {
 	if _, ok := c.exact[host]; ok {
 		return MatchResult{Decision: Blocked, Rule: host}
 	}
-	// 3) Trie（||锚定 + 纯域名 + 子域继承）。
+	// 3) P1 片段（正则/作用域）——先算好，与 Trie 结果并链。
+	pImpAllow, pImpBlock, pAllow, pBlock, pRule := c.matchP1(host, ctx)
+
+	// 4) Trie（||锚定 + 纯域名 + 子域继承）。
 	lr := c.domainTrie.lookup(host)
-	if lr == nil {
-		return MatchResult{Decision: NoMatch}
-	}
-	// 聚合链上全部标志：任一节点有 important* 则提升到对应级别；
-	// 普通级别同向合并。
 	var allow, block, impAllow, impBlock bool
-	for _, node := range lr.chain {
-		impAllow = impAllow || node.importantAllow
-		impBlock = impBlock || node.importantBlock
-		allow = allow || node.allow
-		block = block || node.block
+	rule := pRule
+	if lr != nil {
+		// 聚合链上全部标志：任一节点有 important* 则提升到对应级别；
+		// 普通级别同向合并。
+		for _, node := range lr.chain {
+			impAllow = impAllow || node.importantAllow
+			impBlock = impBlock || node.importantBlock
+			allow = allow || node.allow
+			block = block || node.block
+		}
+		if pRule == "" {
+			rule = "||" + host + "^"
+		}
 	}
-	rule := "||" + host + "^"
+	// P1 片段并入同一优先级链。
+	impAllow = impAllow || pImpAllow
+	impBlock = impBlock || pImpBlock
+	allow = allow || pAllow
+	block = block || pBlock
 	switch {
 	case impAllow:
 		return MatchResult{Decision: AllowedImportant, Rule: rule}

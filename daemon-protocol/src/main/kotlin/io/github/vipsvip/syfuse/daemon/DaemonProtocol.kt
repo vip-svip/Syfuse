@@ -76,6 +76,8 @@ object DaemonProtocol {
         "scripts.recent",
         // 过滤引擎（M10）：internal/filter，P0 语法（锚定/hosts/dnsmasq/优先级链）。
         "filter.stats",
+        // 备份还原（M13）：internal/backup，ZIP+SHA-256 清单，防半还原。
+        "backup.create", "backup.restore",
     )
 
     /**

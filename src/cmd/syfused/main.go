@@ -401,6 +401,10 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	// 过滤引擎（M10）：stats 来自 internal/filter 的规则集统计。
 	srv.Handle("filter.stats", handleFilterStats(paths))
 
+	// 备份还原（M13）：打包/恢复 config/rules/scripts/modules。
+	srv.Handle("backup.create", handleBackupCreate(paths))
+	srv.Handle("backup.restore", handleBackupRestore(paths))
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))

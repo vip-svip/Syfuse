@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/vip-svip/syfuse/src/internal/backup"
 	"github.com/vip-svip/syfuse/src/internal/filter"
 	"github.com/vip-svip/syfuse/src/internal/logx"
 
@@ -306,5 +308,59 @@ func filterEngineFor(p Paths) *filter.Engine {
 func handleFilterStats(p Paths) ipc.Handler {
 	return func(json.RawMessage) (any, error) {
 		return filterEngineFor(p).Stats(), nil
+	}
+}
+
+// handleBackupCreate 实现 M13 的 backup.create：
+// 打包 config/rules/scripts/modules 四个目录到 <DataDir>/backups/。
+// 入参 {dirs?: ["config",...]} 可自选子集，缺省全四。
+func handleBackupCreate(p Paths) ipc.Handler {
+	return func(raw json.RawMessage) (any, error) {
+		var req struct {
+			Dirs []string `json:"dirs"`
+		}
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &req); err != nil {
+				return nil, fmt.Errorf("backup.create: %w", err)
+			}
+		}
+		if len(req.Dirs) == 0 {
+			req.Dirs = []string{"config", "rules", "scripts", "modules"}
+		}
+		zipPath, mf, err := backup.Create(p.DataDir, req.Dirs, buildVersion)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"zip": zipPath, "manifest": mf}, nil
+	}
+}
+
+// handleBackupRestore 实现 M13 的 backup.restore：入参 {zip: "<路径>"}。
+// zip 路径必须位于 <DataDir>/backups/ 内（防任意文件读取面扩大）。
+func handleBackupRestore(p Paths) ipc.Handler {
+	return func(raw json.RawMessage) (any, error) {
+		var req struct {
+			Zip string `json:"zip"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return nil, fmt.Errorf("backup.restore: %w", err)
+		}
+		if req.Zip == "" {
+			return nil, fmt.Errorf("backup.restore: 缺 zip 路径")
+		}
+		allowedRoot, _ := filepath.Abs(filepath.Join(p.DataDir, "backups"))
+		zipAbs, err := filepath.Abs(req.Zip)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.HasPrefix(zipAbs, allowedRoot+string(filepath.Separator)) &&
+			zipAbs != allowedRoot {
+			return nil, fmt.Errorf("backup.restore: 备份包必须位于 %s", allowedRoot)
+		}
+		mf, err := backup.Restore(p.DataDir, zipAbs)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"manifest": mf}, nil
 	}
 }

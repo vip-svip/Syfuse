@@ -61,14 +61,12 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 13 轮（2026-10-14）cron 调度器 + http 脚本挂钩链落地
-（b70ffed 已推送）：internal/script 补齐 cron.go（标准 5 段表达式 + Next
-剪枝 + Scheduler 注入时钟确定性测试）与 hook.go（HookChain：body 叠加/
-headers 合并/reject 短路/错误续跑/IncHits）；脚本包 22 条测试全绿，
-kernel-checks PASS 用例=313 失败=0。
-下一轮第一个动作：**daemon 接线 Scheduler**——service 启动时起调度循环
-（每分钟 RunDue），scripts.recent UDS 方法暴露执行历史；
-之后 M10 过滤内核（filter.stats + AGH/uBO 语法差距调研 docs/filter_gap.md）。
+NEXT_ACTION: 第 14 轮（2026-10-14）daemon 接线 cron 调度完成（2499d92 已
+推送）：StartScriptScheduler 每分钟 RunDue 常驻循环（结果进日志，错误不
+拖垮守护进程）+ scripts.recent UDS 方法 + Kotlin 表同步；M7 脚本系统全链
+闭环（引擎/存储/UDS/调度/挂钩链）。
+下一轮第一个动作：**M10 过滤内核**——docs/filter_gap.md 语法差距调研
+（AGH/uBO Lite/SY-Fusion 对齐第 6 部分），随后 filter 引擎 Go 侧实现。
 
 ```
 

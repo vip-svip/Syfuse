@@ -61,14 +61,15 @@ TASKS
 
 ```
 
-NEXT_ACTION: 第 18 轮（2026-10-14）M11 Hook 框架检测落地（68ccd78 已
-推送）：internal/hook——8 框架特征路径表（exists 注入零 I/O，沙盒
-确定性）、root 形态判定、InjectionCapable、无框架降级说明（规范 6.5
-三级降级语义）；hook.status UDS 从 pending 转正（非 Android 环境返回
-空列表+降级说明，与无 root 语义一致）；6 条测试。
-kernel-checks PASS 用例=348 失败=0。pending 表仅剩 leak.fix(M12)/
-config.reload(M5)。下一轮第一个动作：**M14 打磨**——README 覆盖度
-对照表 + 功能可用性报告 + 打包校验（可离线），随后 leak.fix 一键修复。
+NEXT_ACTION: 第 19 轮（2026-10-14）M12 收尾 + M14 打磨起步（d9b7399 已
+推送）：leak/fix.go（FixPlan 修复计划 + ApplyConf 配置 upsert，4 测试），
+leak.fix UDS 转正（pending 表仅剩 config.reload）；README 功能可用性
+报告刷新至当前里程碑（19 项可用/5 项不可用含真机依赖说明）。
+kernel-checks PASS 用例=352 失败=0。
+下一轮第一个动作：**M14 续**——config.reload（M5 收尾，pending 清零）、
+打包校验门禁（module.prop/manifest/二进制产物一致性）、双语与
+功能覆盖度对照表终稿。真机依赖项（开屏/UID 分流/Hook 本体/面板）列
+真机验证清单。
 
 ```
 

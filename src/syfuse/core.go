@@ -29,6 +29,10 @@ type Engine struct {
 	// tunnel 是正在运行的本地入站 + 出站隧道。nil 表示未启动。
 	tunnel *dataplane.DataPlane
 
+	// netBlock 是网络封禁钩子（M13）：daemon 注入 internal/filter 的判定。
+	// 原子指针：Start 构造 dataplane 时读取，运行中热更新下一次 Start 生效。
+	netBlock func(host string) bool
+
 	// socksAddr 是 tunnel 实际监听到的地址（端口可能是系统分配的）。
 	// 空串表示没有隧道在跑。由 [Engine.SocksAddr] 报给上层 ——
 	// TUN/iptables 侧需要它来决定把流量送到哪里。
@@ -78,6 +82,14 @@ type Stats struct {
 // 把"还没点连接"显示成"内核没装上"——那是把能力缺失当成状态。
 // StateNotLinked 常量本身保留（Kotlin 侧 EngineState 枚举与历史配置里
 // 还有它），只是不再由本函数产生。
+// SetNetBlock 注入网络封禁钩子（M13）。
+// host 参数是 SOCKS5 目标（域名或字面 IP）；返回 true 即拒绝连接。
+func (e *Engine) SetNetBlock(fn func(host string) bool) {
+	e.mu.Lock()
+	e.netBlock = fn
+	e.mu.Unlock()
+}
+
 func NewEngine() *Engine {
 	return &Engine{state: StateStopped, tracker: conn.NewTracker(conn.TrackerOptions{})}
 }
@@ -134,6 +146,9 @@ func (e *Engine) Start(configJSON string) error {
 	// 连接跟踪（M9）：每个 Engine 一份，跨 Start/Stop 保留记录
 	// —— connections 接口报的是"本守护进程见过的连接"，不是"本次启动的"。
 	opts.Tracker = e.tracker
+	// 网络封禁（M13）：调用方可注入（daemon 把 internal/filter 的
+	// Match/MatchIP 接进来）；nil = 不启用。
+	opts.NetBlock = e.netBlock
 	tun, err := dataplane.New(opts)
 	if err != nil {
 		e.state = StateFailed

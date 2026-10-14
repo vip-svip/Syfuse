@@ -26,6 +26,9 @@ import (
 type proxyManager struct {
 	mu sync.Mutex
 
+	// paths 是数据目录等路径（NetBlock 规则集读取用）。
+	paths Paths
+
 	// running 表示"用户已要求启动"。注意它**不等于**"流量已被代理"：
 	// 后者取决于内核宿主是否接通，由 engineState 单独如实上报。
 	running bool
@@ -58,7 +61,11 @@ type proxyTestResult struct {
 }
 
 func newProxyManager() *proxyManager {
-	return &proxyManager{lastTest: map[string]proxyTestResult{}}
+	return newProxyManagerWithPaths(Paths{})
+}
+
+func newProxyManagerWithPaths(p Paths) *proxyManager {
+	return &proxyManager{paths: p, lastTest: map[string]proxyTestResult{}}
 }
 
 // proxyStartParams 是 `proxies.start` / `proxies.reload` 的参数。
@@ -164,6 +171,8 @@ func (pm *proxyManager) start(configJSON, profileID, nodeName string) (any, erro
 	if pm.engine == nil {
 		pm.engine = syfuse.NewEngine()
 	}
+	// 网络封禁（M13）：filter 引擎的域名拦截 + 字面 IP 拦截接进数据面。
+	pm.engine.SetNetBlock(netBlockFor(pm.paths))
 
 	// Start 成功时状态为 running，应答里带 socksAddr（本地入站地址）。
 	// 失败时（配置坏、节点协议没有拨号器、端口被占用）状态为 failed，
@@ -277,6 +286,7 @@ func (pm *proxyManager) reload(configJSON string, profileID, nodeName string) (a
 		pm.engine = syfuse.NewEngine()
 	}
 	eng := pm.engine
+	eng.SetNetBlock(netBlockFor(pm.paths))
 	pm.mu.Unlock()
 
 	if !wasRunning {
@@ -576,4 +586,39 @@ func handleLeakCheck() ipc.Handler {
 			CheckIPEcho: true, CheckSplit: true, CheckSystem: true,
 		}), nil
 	}
+}
+
+// netBlockFor 把 internal/filter 的判定接成 dataplane 的 NetBlock 钩子：
+// 域名走 filter 优先级链（||锚定/hosts/dnsmasq/正则），字面 IP 走
+// ipcidr 规则源的 MatchIP。规则集为空时全部放行（零开销路径）。
+func netBlockFor(p Paths) func(string) bool {
+	fe := filterEngineFor(p)
+	return func(host string) bool {
+		if isLiteralIP(host) {
+			return fe.MatchIP(host)
+		}
+		return fe.Match(host).Decision.Block()
+	}
+}
+
+// isLiteralIP 判断 host 是否是字面 IP（IPv4 简单判定；IPv6 含冒号）。
+func isLiteralIP(host string) bool {
+	if strings.Contains(host, ":") {
+		return true
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || len(p) > 3 {
+			return false
+		}
+		for i := 0; i < len(p); i++ {
+			if p[i] < '0' || p[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }

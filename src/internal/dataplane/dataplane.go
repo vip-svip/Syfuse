@@ -86,6 +86,12 @@ type Options struct {
 	// Router 做路由决策。nil 时所有连接都走 Proxy（等同全局模式）。
 	Router Router
 
+	// NetBlock 是网络封禁钩子（M13，规范 6.3"网络封禁"）：
+	// 在路由决策**之前**调用，返回 true 即拒绝连接（记 blocked 计数）。
+	// 参数是 SOCKS5 目标 host（域名或字面 IP）。
+	// nil = 不启用网络封禁。
+	NetBlock func(host string) bool
+
 	// DialTimeout 单次拨号超时；0 用 outbound.DialTimeout。
 	DialTimeout time.Duration
 
@@ -278,6 +284,14 @@ func (d *DataPlane) dial(network, address string) (net.Conn, error) {
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: 端口 %q 非数字: %w", portStr, err)
+	}
+
+	// 网络封禁先于一切路由决策（规范 6.3"DNS 层+连接层双保险"的
+	// 连接层这一环）：封禁的域名/字面 IP 直接拒绝。
+	if d.opts.NetBlock != nil && d.opts.NetBlock(host) {
+		d.counts.blocked.Add(1)
+		return nil, fmt.Errorf("%w: netblock %s", socks5.ErrPolicyRejected,
+			net.JoinHostPort(host, portStr))
 	}
 
 	decision := DecisionProxy

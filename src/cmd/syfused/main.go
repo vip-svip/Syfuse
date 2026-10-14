@@ -405,6 +405,9 @@ func buildServer(paths Paths, log *logx.Logger) (*ipc.Server, error) {
 	srv.Handle("backup.create", handleBackupCreate(paths))
 	srv.Handle("backup.restore", handleBackupRestore(paths))
 
+	// 通知净化（M13）：notify.test 单条试跑。
+	srv.Handle("notify.test", handleNotifyTest(paths))
+
 	// 模块管理（M7a）：存储在 <DataDir>/modules，语义见 internal/module。
 	srv.Handle("modules.list", handleModulesList(paths))
 	srv.Handle("modules.import", handleModulesImport(paths))

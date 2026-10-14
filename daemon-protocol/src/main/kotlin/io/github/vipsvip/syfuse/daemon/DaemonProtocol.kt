@@ -78,6 +78,8 @@ object DaemonProtocol {
         "filter.stats",
         // 备份还原（M13）：internal/backup，ZIP+SHA-256 清单，防半还原。
         "backup.create", "backup.restore",
+        // 通知净化（M13）：internal/notify，关键字/包名/正则。
+        "notify.test",
     )
 
     /**

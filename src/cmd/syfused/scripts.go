@@ -15,6 +15,7 @@ import (
 	"github.com/vip-svip/syfuse/src/internal/backup"
 	"github.com/vip-svip/syfuse/src/internal/filter"
 	"github.com/vip-svip/syfuse/src/internal/logx"
+	"github.com/vip-svip/syfuse/src/internal/notify"
 
 	"github.com/vip-svip/syfuse/src/internal/ipc"
 	"github.com/vip-svip/syfuse/src/internal/script"
@@ -362,5 +363,49 @@ func handleBackupRestore(p Paths) ipc.Handler {
 			return nil, err
 		}
 		return map[string]any{"manifest": mf}, nil
+	}
+}
+
+// notifyFilterFor 是 daemon 级通知净化器单例（<DataDir>/notify_keywords.conf）。
+var (
+	notifyFilterOnce sync.Once
+	notifyFilter     *notify.Filter
+	notifyStats      *notify.Stats
+)
+
+func notifyFilterFor(p Paths) *notify.Filter {
+	notifyFilterOnce.Do(func() {
+		text := ""
+		if data, err := os.ReadFile(filepath.Join(p.DataDir, "notify_keywords.conf")); err == nil {
+			text = string(data)
+		}
+		notifyFilter, notifyStats = notify.Parse(text)
+	})
+	return notifyFilter
+}
+
+// handleNotifyTest 实现 M13 的 notify.test：给定包名/标题/正文，
+// 返回净化决策（调试控制台"单条试跑"）。
+func handleNotifyTest(p Paths) ipc.Handler {
+	return func(raw json.RawMessage) (any, error) {
+		var req struct {
+			Pkg     string `json:"pkg"`
+			Title   string `json:"title"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return nil, fmt.Errorf("notify.test: %w", err)
+		}
+		f := notifyFilterFor(p)
+		m, hit := f.ShouldFilter(req.Pkg, req.Title, req.Content)
+		resp := map[string]any{"matched": hit}
+		if m != nil {
+			resp["rule"] = m.Rule
+			resp["line"] = m.Line
+		}
+		if notifyStats != nil {
+			resp["stats"] = *notifyStats
+		}
+		return resp, nil
 	}
 }

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import io.github.vipsvip.syfuse.domain.engine.EngineState
 import io.github.vipsvip.syfuse.domain.model.RoutingMode
+import io.github.vipsvip.syfuse.ui.nav.AppRoutes
 import io.github.vipsvip.syfuse.ui.theme.StatusColors
 import io.github.vipsvip.syfuse.ui.vm.HomeViewModel
 
@@ -43,7 +44,7 @@ import io.github.vipsvip.syfuse.ui.vm.HomeViewModel
  * 过滤拦截计数放在最末尾，确保不干扰主干操作路径（5.1 的显式要求）。
  */
 @Composable
-fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(onOpen: (String) -> Unit = {}, viewModel: HomeViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
 
     Column(
@@ -78,7 +79,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         )
 
         Spacer(Modifier.height(16.dp))
-        QuickActions()
+        QuickActions(
+            onUrlTest = viewModel::urlTest,
+            onOpen = onOpen,
+            message = state.quickActionMessage,
+        )
 
         Spacer(Modifier.height(24.dp))
         Text(
@@ -197,9 +202,23 @@ private fun TrafficCard(upPerSec: Double, downPerSec: Double, totalUp: Long, tot
     }
 }
 
-/** 快捷动作区。测速 / 更新订阅 / 清理 DNS 缓存 / 查看连接（5.1）。 */
+/**
+ * 快捷动作区。测速 / 更新订阅 / 清理 DNS 缓存 / 查看连接（5.1）。
+ *
+ * 这四个动作原本全是 `onClick = { }`：看着能点，点下去毫无反应也没有任何说明 ——
+ * 这正是"像空壳"的观感来源。现在逐个给出真实去处：
+ *  - 测速：调用内核 `proxies.urlTest`，结果或失败原因如实回显（不伪造延迟）；
+ *  - 更新订阅：跳转代理页，订阅导入实现于彼处；
+ *  - 查看连接：跳转连接二级页；
+ *  - 清理 DNS 缓存：内核尚未提供 `dns.flush` 接口，**禁用并标注原因**，
+ *    而不是保留一个点了没反应的按钮。
+ */
 @Composable
-private fun QuickActions() {
+private fun QuickActions(
+    onUrlTest: () -> Unit,
+    onOpen: (String) -> Unit,
+    message: String?,
+) {
     Column {
         Text("快捷动作", style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(8.dp))
@@ -207,21 +226,36 @@ private fun QuickActions() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            listOf("测速", "更新订阅", "清理 DNS 缓存", "查看连接").forEach { action ->
-                TextButton(onClick = { }) {
-                    Text(action, style = MaterialTheme.typography.labelMedium)
-                }
+            TextButton(onClick = onUrlTest) {
+                Text("测速", style = MaterialTheme.typography.labelMedium)
             }
+            TextButton(onClick = { onOpen(AppRoutes.PROXY) }) {
+                Text("更新订阅", style = MaterialTheme.typography.labelMedium)
+            }
+            TextButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.semantics {
+                    contentDescription =
+                        "清理 DNS 缓存，未实现，内核尚未提供 dns.flush 接口"
+                },
+            ) {
+                Text("清理 DNS 缓存", style = MaterialTheme.typography.labelMedium)
+            }
+            TextButton(onClick = { onOpen(AppRoutes.CONNECTIONS) }) {
+                Text("查看连接", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        if (message != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 /** 速率格式化。单位换算用 1024 进制，与内核上报口径一致。 */
 internal fun formatRate(bytesPerSec: Double): String = "${formatBytes(bytesPerSec.toLong())}/s"
-
-internal fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
-    else -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
-}

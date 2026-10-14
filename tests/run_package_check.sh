@@ -18,8 +18,12 @@ pass_n=0; fail_n=0
 pass() { pass_n=$((pass_n+1)); echo "  [PASS] $1"; }
 fail() { fail_n=$((fail_n+1)); echo "  [FAIL] $1"; }
 
-PY="$(command -v python || command -v python3)"
-[ -n "$PY" ] || { echo "需要 python"; exit 2; }
+# python 解释器：必须**真的能执行**。只判 `command -v python` 会被 Windows 的
+# Microsoft Store 应用执行别名桩程序骗过（名字能解析、执行报 "Python was not
+# found" 并以 49 退出），于是下面两条断言会把"缺 Python"报成"SHA-256 不符 /
+# zip 结构错"——一个把排查方向指向错误一侧的假失败。探测逻辑单点在 tests/env.sh。
+syfuse_require_python
+PY="$PYTHON_BIN"
 
 echo "== module.prop 必需键 =="
 MP="module/module.prop"

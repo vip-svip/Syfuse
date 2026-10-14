@@ -113,7 +113,11 @@ MANIFEST="$FAKE_DATA/manifest/installed.json"
 if [ -f "$MANIFEST" ]; then
   ok "还原清单已生成: manifest/installed.json"
   # 清单必须是合法 JSON，且含 restorable=true 的条目
-  if python_bin=$(command -v python3 || command -v python 2>/dev/null) && [ -n "${python_bin:-}" ]; then
+  # 必须用 syfuse_python（内部会真的跑一段代码验证解释器可用），**不能**用
+  # `command -v python3`：Windows 的 Microsoft Store 应用执行别名会让
+  # command -v 成功解析到一个桩程序，执行时报 "Python was not found" 并非零退出；
+  # 那样下面的断言会失败，并把"没装 Python"报成"清单内容不合规"。
+  if python_bin="$(syfuse_python)"; then
     if "$python_bin" - "$MANIFEST" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1],encoding='utf-8'))
@@ -130,7 +134,7 @@ PY
       no "清单内容不合规（见上方断言）"
     fi
   else
-    info "无 Python，跳过清单 JSON 结构校验"
+    info "无可用 Python 3，跳过清单 JSON 结构校验"
   fi
 else
   no "还原清单未生成 —— 卸载将失去还原依据"

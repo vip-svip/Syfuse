@@ -20,7 +20,7 @@ import io.github.vipsvip.syfuse.core.rule.ResourceType
  * | --------- | --------------------- | ---- |
  * | BLOCK     | REJECT                | 命中拦截类规则（域名/URL/通配/正则/hosts 黑洞/dnsmasq `address=/d/`），连接不得建立 |
  * | ALLOW     | DIRECT                | 命中例外放行（`@@`）规则：明确放行即直连，不再落入默认动作 |
- * | REWRITE   | DIRECT（+ [RouteDecision.dnsRewrite]） | 重写的载荷是**本地伪造应答**，连接根本不出网；出站选择上等同直连，载荷交由 DNS/HTTP 层消费 |
+ * | REWRITE   | DIRECT（+ [RouteDecision.rewrite]） | 重写的载荷是**本地伪造应答**，连接根本不出网；出站选择上等同直连，载荷交由 DNS/HTTP 层消费 |
  * | NONE      | [RoutingPolicy.noMatch] | 未命中任何规则。默认动作**必须显式配置**，不允许"没配置就当直连" |
  *
  * 两个必须讲清楚的边界：
@@ -56,7 +56,7 @@ class RuleRouter(
                 engineDecision = Decision.BLOCK,
                 enginePriority = result.priority,
                 matchedRule = result.matchedRule,
-                dnsRewrite = null,
+                rewrite = null,
                 reason = ruleReason("命中拦截规则", result.matchedRule, result.priority),
             )
 
@@ -66,7 +66,7 @@ class RuleRouter(
                 engineDecision = Decision.ALLOW,
                 enginePriority = result.priority,
                 matchedRule = result.matchedRule,
-                dnsRewrite = null,
+                rewrite = null,
                 reason = ruleReason("命中放行规则（@@ 例外）", result.matchedRule, result.priority),
             )
 
@@ -76,7 +76,7 @@ class RuleRouter(
                 engineDecision = Decision.REWRITE,
                 enginePriority = result.priority,
                 matchedRule = result.matchedRule,
-                dnsRewrite = result.matchedRule?.mods?.dnsRewrite,
+                rewrite = result.matchedRule?.rewritePayload(),
                 reason = ruleReason("命中重写规则（本地伪造应答，不出网）", result.matchedRule, result.priority),
             )
 
@@ -86,6 +86,24 @@ class RuleRouter(
 
     // ---------------------------------------------------------------- 内部
 
+    /**
+     * 把引擎判出的 REWRITE 规则翻译成具体载荷。
+     *
+     * 顺序必须与 `CompiledNetworkRule.action` 的判定顺序**一致**
+     * （dnsRewrite → redirect → empty）：那边第一个非 null 的条件决定了
+     * decision 是 REWRITE，这边必须挑同一个来源，否则会出现"引擎说是重写、
+     * 映射层却给了另一种载荷"的错配。
+     *
+     * 返回 null 只在引擎契约被破坏时发生（判了 REWRITE 却三个来源都空），
+     * 此时**宁可如实留空**，也不编造一个空载荷冒充成功。
+     */
+    private fun CompiledNetworkRule.rewritePayload(): RewritePayload? {
+        mods.dnsRewrite?.let { return RewritePayload.Dns(it) }
+        mods.redirect?.let { return RewritePayload.Redirect(it) }
+        if (mods.empty) return RewritePayload.Empty
+        return null
+    }
+
     private fun RoutingTarget.toMatchRequest(): MatchRequest = MatchRequest(
         host = host,
         url = url,
@@ -93,6 +111,7 @@ class RuleRouter(
         documentHost = documentHost,
         client = client,
         ctag = ctag,
+        method = method,
     )
 
     /**
@@ -107,7 +126,7 @@ class RuleRouter(
             engineDecision = Decision.NONE,
             enginePriority = Priority.NONE,
             matchedRule = null,
-            dnsRewrite = null,
+            rewrite = null,
             reason = "未命中任何规则；按策略默认动作直连",
         )
 
@@ -122,7 +141,7 @@ class RuleRouter(
                 engineDecision = Decision.NONE,
                 enginePriority = Priority.NONE,
                 matchedRule = null,
-                dnsRewrite = null,
+                rewrite = null,
                 reason = if (node == null) {
                     "未命中任何规则；策略默认动作为走代理，但尚未选择节点 —— " +
                         "请先在节点页选择节点，或把默认动作改为直连"
@@ -170,8 +189,17 @@ class RuleRouter(
  *    TODO(M9)：连接列表与按应用分流接入后回填，当前恒为 null。
  *  - [ctag]：客户端标签（对应 `$ctag` 作用域）。TODO(M10)：标签组接入后回填。
  *  - [resourceType]：资源类型。连接层拿不到，null 表示"未知"（按 `other` 匹配）。
- *  - HTTP method **不在**本类里：连接层不可知，`$method` 规则在连接层因此不会
- *    命中。如实标注缺失，而不是悄悄传 null 装作支持。
+ *  - [method]：HTTP 请求方法（对应 `$method` 作用域）。**连接层不可知**，故默认
+ *    null；此时 `$method` 规则不会命中（引擎语义：要求方法而请求无方法 = 不匹配）。
+ *    有 HTTP 语义的层（M8 MITM / 规则测试）**必须**回填，否则 `$method` 规则
+ *    形同不存在。
+ *
+ *    为什么以前这里没有这个字段：早期实现假定"连接层拿不到方法"，于是整个
+ *    Kotlin 侧都无法表达 `$method`。但 `tests/expect.tsv` 已启用 method 断言
+ *    （189 行中含 `$method=POST` / `$method=~GET` 等 5 行），Go 侧
+ *    `src/syfuse/rule/corpus_test.go` 一直把方法传进引擎 —— 于是两边语义漂移：
+ *    同一行语料 Go 判 block、Kotlin 判 none。补齐字段是让混合预言机重新对齐的
+ *    唯一办法。
  */
 data class RoutingTarget(
     val host: String,
@@ -181,6 +209,7 @@ data class RoutingTarget(
     val client: String? = null,
     val ctag: String? = null,
     val resourceType: ResourceType? = null,
+    val method: String? = null,
 ) {
     init {
         require(host.isNotBlank()) {
@@ -233,7 +262,38 @@ data class RouteDecision(
     val engineDecision: Decision,
     val enginePriority: Priority,
     val matchedRule: CompiledNetworkRule?,
-    /** 仅 [Decision.REWRITE] 且载荷是 DNS 重写时非空（如 hosts 非黑洞地址、dnsmasq address=/d/ip）。 */
-    val dnsRewrite: String?,
+    /**
+     * 仅 [Decision.REWRITE] 时非空：本次重写要伪造的应答内容。
+     *
+     * 为什么不能只留一个 `dnsRewrite: String?`：引擎的 REWRITE 有三个来源 ——
+     * `$dnsrewrite`/hosts/dnsmasq（DNS 层改写地址）、`$redirect`（HTTP 层改写到
+     * 本地资源）、`$empty`（返回空应答）。原实现只把第一种投影出来，于是
+     * `$redirect` 与 `$empty` 规则**判为重写却没有载荷可消费** —— 上层拿到一个
+     * DIRECT 决策，既不知道要跳转到哪，也不知道该返回空。那正是"壳"：
+     * 决策做出来了，动作落不了地。
+     */
+    val rewrite: RewritePayload?,
     val reason: String,
-)
+) {
+    /**
+     * DNS 解析重写地址。仅当 [rewrite] 是 [RewritePayload.Dns] 时非空。
+     * 保留为派生属性而非独立字段，避免"载荷"有两个可能不一致的副本。
+     */
+    val dnsRewrite: String?
+        get() = (rewrite as? RewritePayload.Dns)?.address
+}
+
+/**
+ * REWRITE 决策要伪造的应答内容。三种来源互斥 —— 引擎按
+ * `dnsRewrite` / `redirect` / `empty` 的顺序择一（见 `CompiledNetworkRule.action`）。
+ */
+sealed interface RewritePayload {
+    /** DNS 层：把该域名解析到 [address]（IP 字面量或 `local` 等 dnsmasq 关键字）。 */
+    data class Dns(val address: String) : RewritePayload
+
+    /** HTTP 层：把请求重写为本地资源 [target]（`$redirect=` 的值）。 */
+    data class Redirect(val target: String) : RewritePayload
+
+    /** HTTP 层：返回空应答（`$empty`），既不跳转也不出网。 */
+    data object Empty : RewritePayload
+}

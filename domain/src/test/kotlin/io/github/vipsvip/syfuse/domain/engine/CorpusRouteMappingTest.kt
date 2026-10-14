@@ -30,9 +30,11 @@ import java.io.File
  * 扩容后本类自动覆盖新行。唯一耦合是 8 列制表符格式与 decision 词表，
  * 这正是跨语言契约本身。
  *
- * method 列不参与：连接层拿不到 HTTP method（见 RoutingTarget 文档），
- * 语料中该列当前也全是 `-`。若将来语料启用 method 断言，说明 HTTP 层
- * （M8）已能提供该方法，届时在 RoutingTarget 补字段即可。
+ * method 列**参与**：`tests/expect.tsv` 已启用 method 断言（`$method=POST`、
+ * `$method=~GET` 等行），Go 侧 corpus_test.go 一直把该方法传进引擎。本类此前
+ * 断言"该列全是 `-`"因此丢掉了它对映射层的约束 —— 结果是同一行语料 Go 判
+ * block、Kotlin 判 none（跨语言漂移，且被 Gradle 增量缓存长期掩盖）。
+ * 现已通过 [RoutingTarget.method] 透传。
  */
 class CorpusRouteMappingTest {
 
@@ -42,6 +44,7 @@ class CorpusRouteMappingTest {
         val value: String,
         val resourceType: ResourceType,
         val documentHost: String?,
+        val method: String?,
         val wantDecision: String,
         val wantPriority: String,
         val note: String,
@@ -124,12 +127,15 @@ class CorpusRouteMappingTest {
                 assertWithMessage("重写行应为直连 → `${row.value}`（${row.note}）")
                     .that(decision.action)
                     .isEqualTo(RouteAction.DIRECT)
+                // 载荷有且只有三种：DNS 改写 / HTTP 跳转 / 空应答。断言"非空"而不是
+                // 只断言 dnsRewrite —— $redirect 与 $empty 规则同样必须交出载荷，
+                // 否则上层拿到重写决策却无从执行（历史上正是只投影了 DNS 一种）。
                 assertWithMessage("重写载荷缺失 → `${row.value}`（${row.note}）")
-                    .that(decision.dnsRewrite)
+                    .that(decision.rewrite)
                     .isNotNull()
             } else {
                 assertWithMessage("非重写行不应携带重写载荷 → `${row.value}`（${row.note}）")
-                    .that(decision.dnsRewrite)
+                    .that(decision.rewrite)
                     .isNull()
             }
         }
@@ -162,12 +168,14 @@ class CorpusRouteMappingTest {
             host = row.value,
             resourceType = row.resourceType,
             documentHost = row.documentHost,
+            method = row.method,
         )
         "url" -> RoutingTarget(
             host = MatchRequest.extractHost(row.value),
             url = row.value,
             resourceType = row.resourceType,
             documentHost = row.documentHost,
+            method = row.method,
         )
         else -> error("expect.tsv 出现未知 kind：${row.kind}")
     }
@@ -199,6 +207,8 @@ class CorpusRouteMappingTest {
                     value = cols[1].trim(),
                     resourceType = ResourceType.fromToken(cols[2].trim()) ?: ResourceType.OTHER,
                     documentHost = cols[3].trim().takeIf { it != "-" },
+                    // cols[4] 是 method；`-` 表示该行不约束方法（引擎语义：无方法 = 不匹配）
+                    method = cols[4].trim().takeIf { it != "-" },
                     wantDecision = cols[5].trim(),
                     wantPriority = cols[6].trim(),
                     note = cols[7].trim(),

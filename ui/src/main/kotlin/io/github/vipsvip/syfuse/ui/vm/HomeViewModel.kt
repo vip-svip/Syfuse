@@ -3,6 +3,7 @@ package io.github.vipsvip.syfuse.ui.vm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.vipsvip.syfuse.core.common.SyfuseResult
 import io.github.vipsvip.syfuse.data.repo.ConfigRepository
 import io.github.vipsvip.syfuse.domain.engine.EngineConfig
 import io.github.vipsvip.syfuse.domain.engine.EngineController
@@ -29,6 +30,8 @@ data class HomeUiState(
     val currentNodeName: String? = null,
     /** 过滤规则拦截计数。位置在首页末尾，不干扰主干（5.1）。 */
     val blockedCount: Long = 0,
+    /** 快捷动作的一次性反馈文本；null 表示无需展示。 */
+    val quickActionMessage: String? = null,
 )
 
 @HiltViewModel
@@ -64,6 +67,17 @@ class HomeViewModel @Inject constructor(
                     )
                 }
         }
+        // 节点列表：原实现从不写 currentNodeName，导致首页永远显示「未选择节点」，
+        // 而「测速」又必须有节点名才能调用内核。这里补上唯一的数据来源。
+        viewModelScope.launch {
+            repository.observeNodes()
+                .catch { }
+                .collect { nodes ->
+                    _uiState.value = _uiState.value.copy(
+                        currentNodeName = nodes.firstOrNull()?.name,
+                    )
+                }
+        }
     }
 
     /** 顶部大开关。四态语义由 [EngineState] 表达。 */
@@ -81,14 +95,39 @@ class HomeViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(routingMode = mode)
     }
 
+    /**
+     * 快捷动作「测速」。真实调用内核的 `proxies.urlTest`，失败时回显原因。
+     *
+     * 纪律与 [io.github.vipsvip.syfuse.ui.vm.NodesViewModel] 一致：
+     * 宁可显示"未接入"，也不伪造一个看着合理的延迟数字。
+     */
+    fun urlTest() {
+        viewModelScope.launch {
+            val node = _uiState.value.currentNodeName
+            if (node == null) {
+                _uiState.value = _uiState.value.copy(
+                    quickActionMessage = "测速需要先导入节点",
+                )
+                return@launch
+            }
+            val message = when (val result = engine.urlTest(listOf(node))) {
+                is SyfuseResult.Success ->
+                    result.value[node]?.let { "$node 延迟 $it ms" } ?: "$node 未返回延迟"
+                is SyfuseResult.Failure -> "测速失败：${result.error.userMessage}"
+            }
+            _uiState.value = _uiState.value.copy(quickActionMessage = message)
+        }
+    }
+
     private fun buildConfig(): EngineConfig {
         val profile = _uiState.value.currentProfileName?.let { name ->
             Profile(id = "current", name = name, routingMode = _uiState.value.routingMode)
         } ?: Profile(id = "default", name = "默认配置")
-        // 内核配置文本由配置编译器产出（随 M5 交付）；此处传入空文本。
-        // 当前绑定的 UdsDataPlane 会把请求转发给守护进程的 proxies.start，
-        // 守护进程如实回"未实现（计划里程碑 M3）"，界面据此展示原因 ——
-        // 不会显示"已连接"。
+        // 内核配置文本由配置编译器产出（随 M5 交付）；此处仍传入空文本。
+        // 注意：守护进程的 proxies.start **已经实现**（会真的拉起 SOCKS5 监听），
+        // 所以它不会回"未实现（计划里程碑 M3）"——旧注释已过时。真正拦住连接的是
+        // 更上游一环：无 root 时读不到 0600 的 api.token，EngineController 因此落在
+        // ERROR 并展示"数据面不可用"。此处留空文本是已知缺口，不是"如实上报未实现"。
         return EngineConfig(profile = profile, coreConfig = "")
     }
 }

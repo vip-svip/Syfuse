@@ -95,3 +95,72 @@ syfuse_device() {
   adb_bin="$(syfuse_adb)" || return 1
   "$adb_bin" devices | awk 'NR>1 && $2=="device" { print $1; exit }'
 }
+
+# ---------- Python ----------
+# 探测一个**真的能执行**的 Python 3。
+#
+# 为什么不能只判 `command -v python`：
+# Windows 上只要开启过 Microsoft Store 的 python 应用执行别名，PATH 里就会有
+# C:\Users\<u>\AppData\Local\Microsoft\WindowsApps\python.exe —— 一个桩程序，
+# 执行时只打印 "Python was not found; run without arguments to install from
+# the Microsoft Store..." 并以 49 退出，**但 `command -v` 依然成功**。
+# 只判"名字能解析"的脚本会顺利通过前置检查，然后在真正调用解释器时失败，
+# 于是把"没装 Python"报成"清单/产物不合规"——一个把排查方向指向错误一侧的
+# 假失败。验证脚本报假失败比不报更糟，所以这里只认实测结果：
+# 唯一判据是"跑一段真代码且退出码为 0"。
+#
+# 顺序：显式 SYFUSE_PYTHON > python3 > python > py。
+# （python3 优先——Windows 别名桩最常见的就是裸 `python`。）
+syfuse_python() {
+  local cand p
+  for cand in "${SYFUSE_PYTHON:-}" python3 python py; do
+    [ -n "$cand" ] || continue
+    if [ -f "$cand" ]; then
+      p="$cand"
+    else
+      p="$(command -v "$cand" 2>/dev/null)" || continue
+    fi
+    [ -n "$p" ] || continue
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' \
+         >/dev/null 2>&1; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# 诊断输出：把"被解析到但跑不起来"的候选逐个点名，让判定可复核。
+syfuse_python_diagnose() {
+  local cand p found=0
+  for cand in python python3 py; do
+    p="$(command -v "$cand" 2>/dev/null)" || continue
+    [ -n "$p" ] || continue
+    found=1
+    if "$p" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' \
+         >/dev/null 2>&1; then
+      printf '  - %s -> %s（可用）\n' "$cand" "$p" >&2
+    else
+      printf '  - %s -> %s（不可执行，已忽略）\n' "$cand" "$p" >&2
+    fi
+  done
+  [ "$found" -eq 1 ] || printf '  - PATH 上没有任何 python/python3/py\n' >&2
+}
+
+# 必须拿到可用 Python，否则按 R4 以 exit 2 终止（**不得**降级成跳过或失败）。
+# 注意：这里刻意**不用命令替换**取返回值——`exit` 在子 shell 里不会终止父进程，
+# 那会让"缺工具"变成静默继续。结果通过全局 PYTHON_BIN 传出。
+syfuse_require_python() {
+  local p
+  if ! p="$(syfuse_python)"; then
+    printf 'ERROR: 找不到可用的 Python 3。逐项探测结果：\n' >&2
+    syfuse_python_diagnose
+    syfuse_die "缺少 Python 3。怎么补：设置 SYFUSE_PYTHON 指向 python.exe，
+  或安装 Python 3 并确保它在 PATH 上。
+  Windows 若 PATH 里的 python 是 Microsoft Store 应用执行别名（执行时报
+  'Python was not found' 并以 49 退出），请在「设置 → 应用 → 高级应用设置 →
+  应用执行别名」中关闭 python.exe / python3.exe 两项。"
+  fi
+  PYTHON_BIN="$p"
+  export PYTHON_BIN
+}

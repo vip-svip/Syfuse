@@ -7,11 +7,17 @@ import io.github.vipsvip.syfuse.daemon.DaemonClient
 import io.github.vipsvip.syfuse.domain.engine.DataPlane
 import io.github.vipsvip.syfuse.domain.engine.EngineConfig
 import io.github.vipsvip.syfuse.domain.model.ConnSnapshot
+import io.github.vipsvip.syfuse.domain.model.ConnState
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import javax.inject.Inject
 
@@ -24,11 +30,11 @@ import javax.inject.Inject
  *
  * 诚实边界（必须写清楚，否则就成了"假装内核已接入"）：
  *
- *  1. **`proxies.*` 已在守护进程侧真实实现**（T2）：配置校验、节点解析、
- *     选择与测速都真的做。但**隧道本身仍未接通** ——
- *     内核宿主（gomobile AAR）已能构建，却还没有在守护进程进程内加载。
- *     因此 `proxies.start` 返回的 `state` 是 `not_linked` 而不是 `running`，
- *     [start] 会据此**如实失败**，不会让界面显示"已连接"。
+ *  1. **proxies.* 已在守护进程侧真实实现**（M3/M5）：start 会真的建立
+ *     SOCKS5 入站 + 路由决策 + 出站拨号，应答带 state=running 与真实
+ *     socksAddr；kernelLinked 是 JSON **布尔**字面量（不是字符串 "true"）。
+ *     仍未做的是 Android 侧 VpnService TUN 入站（需真机，见 PENDING-EXTERNAL.md）
+ *     ——它不改变"隧道本身已在工作"这一事实。
  *  2. **规则能力已经可用。** `rules.test` / `rules.syntax` / `rules.stats`
  *     是真实实现的，可以直接调用（见 [ruleSetStats]、[ruleDiagnostics]）。
  *  3. **无 root 分支未实现。** 设备没有 root 时，App 应当改为进程内加载
@@ -55,12 +61,12 @@ class UdsDataPlane @Inject constructor(
     private var probe: Probe = Probe.Unknown
 
     /**
-     * 本数据面是否**成功启动过**隧道。
+     * 本数据面是否**当前持有一条由我们启动的隧道**。
      *
-     * 用途：在隧道尚未实现（[start] 必然失败）时，[stop] 不应该再向守护进程
-     * 发一次注定失败的 `proxies.stop` 并把引擎推进 ERROR ——
-     * "没启动过的东西停下来"本来就是成功的。这个标志是本地事实，
-     * 不是对守护进程状态的猜测。
+     * 用途：没启动过就 [stop]，是成功的空操作——不该向守护进程发一次
+     * 多余的 `proxies.stop`，也不该把引擎推进 ERROR。[start] 成功置位、
+     * [stop] 成功复位；App 进程重启后它归零，而守护进程侧的真实状态
+     * 由 `proxies.status` 如实呈现，两者不互相冒充。
      */
     @Volatile
     private var startedByUs: Boolean = false
@@ -109,10 +115,10 @@ class UdsDataPlane @Inject constructor(
                 // 守护进程如实回 state。只有真的 running 才算启动成功 ——
                 // 把 not_linked 当成功会让界面显示"已连接"，而流量根本没被代理。
                 val obj = result.value as? JsonObject
-                val state = (obj?.get("state") as? JsonPrimitive)?.contentOrNull
-                val linked = (obj?.get("kernelLinked") as? JsonPrimitive)?.contentOrNull == "true"
+                val state = obj?.stringOrNull("state")
+                val linked = obj?.boolOrNull("kernelLinked") == true
                 if (state == "failed") {
-                    val err = (obj["error"] as? JsonPrimitive)?.contentOrNull
+                    val err = obj?.stringOrNull("error")
                     SyfuseResult.Failure(
                         SyfuseError(
                             code = ErrorCode.ENGINE_START_FAILED,
@@ -123,7 +129,7 @@ class UdsDataPlane @Inject constructor(
                     )
                 } else if (!linked) {
                     // 内核宿主未接通：这是**如实失败**，不是"已连接"。
-                    val note = (obj?.get("note") as? JsonPrimitive)?.contentOrNull
+                    val note = obj?.stringOrNull("note")
                     SyfuseResult.Failure(
                         SyfuseError(
                             code = ErrorCode.ENGINE_IPC_FAILED,
@@ -170,19 +176,67 @@ class UdsDataPlane @Inject constructor(
         }
 
     /**
-     * 连接列表。
+     * 连接列表快照。
      *
-     * 守护进程的 `connections` 属 M9（未实现），因此这里如实返回空列表，
-     * 且**不做**一次注定失败的网络往返 —— 那只会浪费一次 IPC 而不产生信息。
-     * 接口没有错误通道，所以"为什么是空的"由能力判定
-     * （`DaemonCapability.pendingMilestone("connections")`）负责呈现：
-     * 界面据此把入口标为"实验性/不可用"，而不是显示一个空列表让用户
-     * 以为"当前没有连接"。
+     * 数据来自守护进程的 `connections`（M9 已实现）：内核数据面对每条
+     * 真实连接登记字节数与生命周期（internal/conn.Tracker），这里只做
+     * 字段映射。字段缺失一律落 null / 0，**不补任何看起来合理的默认值**；
+     * 一次 IPC 失败如实回空列表——调用方（EngineController）只在
+     * RUNNING 态查询，空列表在此处与"当前没有连接"同义。
+     *
+     * 方向约定（与 internal/conn.Record 的注释一致）：
+     *  BytesIn = 客户端→上游 = upBytes；BytesOut = 上游→客户端 = downBytes。
      */
-    override suspend fun connections(): List<ConnSnapshot> = emptyList()
+    override suspend fun connections(): List<ConnSnapshot> {
+        val result = client.call("connections")
+        val obj = (result as? SyfuseResult.Success)?.value as? JsonObject ?: return emptyList()
+        val records = obj["records"] as? JsonArray ?: return emptyList()
+        return records.mapNotNull { el ->
+            val rec = el as? JsonObject ?: return@mapNotNull null
+            val id = rec.numberOrNull("id") ?: return@mapNotNull null
+            // Go 侧 time.Time 零值序列化为 "0001-01-01T00:00:00Z"（epoch 为负），
+            // 含义是"仍活动"——判活动必须用 >0，而不是判字段存在。
+            val startMs = rec.stringOrNull("startTime")?.toEpochMillis() ?: return@mapNotNull null
+            val closed = rec.stringOrNull("endTime")?.toEpochMillis()?.takeIf { it > 0 }
+            val reason = rec.stringOrNull("closeReason")
+            ConnSnapshot(
+                id = id.toString(),
+                // Go 侧 protocol 目前恒为 "tcp"（内核只有 TCP 入站）；缺失时不猜。
+                network = rec.stringOrNull("protocol") ?: "",
+                // type：连接类型（proxy/direct）。内核 labels 里记的是路由
+                // 决策 "decision"，值域 proxy/direct/…——这是语义最近的一个，
+                // 没有则留空串，由界面显示"未上报"。
+                type = labelsOf(rec)["decision"] ?: "",
+                srcApp = null, // UID→包名归属需要真机 TrafficStats（M9 真机项），不编造。
+                dstHost = rec.stringOrNull("dstHost"),
+                dstIp = null, // 拨号按主机名走，内核侧没有独立的目标 IP 字段；不拿 srcAddr 冒充。
+                ruleText = null, // 规则原文回填待 M5 数据面对接（见 RuleRouter 字段取舍注释）。
+                chain = null,
+                upBytes = rec.numberOrNull("bytesIn") ?: 0L,
+                downBytes = rec.numberOrNull("bytesOut") ?: 0L,
+                startAt = startMs,
+                state = when {
+                    closed == null -> ConnState.ACTIVE
+                    reason == "timeout" || reason == "shutdown" || reason.isNullOrEmpty() -> ConnState.CLOSED
+                    else -> ConnState.CLOSED
+                },
+            )
+        }
+    }
 
-    /** 累计计数器。守护进程的 `traffic` 属 M9，未就绪时按接口约定返回 null。 */
-    override suspend fun counters(): Pair<Long, Long>? = null
+    /**
+     * 累计字节计数器（traffic 的聚合视图，与 connections 严格同源）。
+     *
+     * 返回 null 的唯一含义是"这一轮拿不到数据"（IPC 失败 / 应答不是预期
+     * 对象），[EngineController.sampleRate] 据此回落到空速率；
+     * 引擎未启动时守护进程返回全零统计，那是真实的"零流量"。
+     */
+    override suspend fun counters(): Pair<Long, Long>? {
+        val result = client.call("traffic")
+        val obj = (result as? SyfuseResult.Success)?.value as? JsonObject ?: return null
+        val up = obj.numberOrNull("totalBytesIn") ?: return null
+        val down = obj.numberOrNull("totalBytesOut") ?: return null
+        return up to down    }
 
     /**
      * 选择节点。
@@ -303,5 +357,21 @@ class UdsDataPlane @Inject constructor(
     private fun describe(error: SyfuseError): String {
         val hint = error.hint?.takeIf { it.isNotBlank() }
         return if (hint == null) error.userMessage else "${error.userMessage}（$hint）"
+    }
+
+    // ---------------------------------------------------------------- 内部工具函数
+
+    private fun JsonObject.stringOrNull(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
+    private fun JsonObject.numberOrNull(key: String) = (this[key] as? JsonPrimitive)?.long
+    private fun JsonObject.boolOrNull(key: String) = (this[key] as? JsonPrimitive)?.boolean
+    private fun String.toEpochMillis(): Long = runCatching { java.time.Instant.parse(this).toEpochMilli() }.getOrNull() ?: -1L
+    private fun labelsOf(rec: JsonObject): Map<String, String> {
+        val raw = rec["labels"] as? JsonObject ?: return emptyMap()
+        val out = mutableMapOf<String, String>()
+        for (k in raw.keys) {
+            val v = raw[k] as? JsonPrimitive
+            if (v != null && v.isString) out[k] = v.content
+        }
+        return out
     }
 }

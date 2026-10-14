@@ -132,8 +132,13 @@ class UdsDataPlaneTest {
     @Test
     fun `启动成功后再 stop 会真的通知守护进程`() = runTest {
         val (plane, transport) = planeWith { method, id ->
-            if (method == "proxies.start") okLine(id, json("""{"started":true}"""))
-            else okLine(id, json("""{"stopped":true}"""))
+            // 应答形状照抄守护进程真实协议（internal/ipc handlers）：proxies.start
+            // 回 state + kernelLinked，不是 {"started":true} 这种自造字段。
+            if (method == "proxies.start") {
+                okLine(id, json("""{"state":"running","kernelLinked":true,"socksAddr":"127.0.0.1:7890"}"""))
+            } else {
+                okLine(id, json("""{"stopped":true}"""))
+            }
         }
 
         assertThat(plane.start(config())).isInstanceOf(SyfuseResult.Success::class.java)
@@ -147,8 +152,27 @@ class UdsDataPlaneTest {
     }
 
     @Test
-    fun `规则能力是真实可用的`() = runTest {
-        val (plane, transport) = planeWith { method, id ->
+    fun `内核宿主未接通时 start 如实失败而不是假装已连接`() = runTest {
+        val (plane, _) = planeWith { method, id ->
+            if (method == "proxies.start") {
+                // 真实守护进程在 TUN 未接（needTun/not_linked）时的应答形状。
+                okLine(id, json("""{"state":"not_linked","kernelLinked":false,"note":"等待 VpnService"}"""))
+            } else {
+                okLine(id, json("""{}"""))
+            }
+        }
+
+        val result = plane.start(config())
+
+        assertThat(result).isInstanceOf(SyfuseResult.Failure::class.java)
+        val error = (result as SyfuseResult.Failure).error
+        assertThat(error.technical).contains("kernelLinked=false")
+        // 用户看到的是人话 + 守护进程给的处置建议
+        assertThat(error.hint).contains("VpnService")
+    }
+
+    @Test
+    fun `规则能力是真实可用的`() = runTest {        val (plane, transport) = planeWith { method, id ->
             when (method) {
                 "rules.stats" -> okLine(id, json("""{"stats":{"rules":27,"indexed":24,"linear":3}}"""))
                 "rules.test" -> okLine(
@@ -171,6 +195,101 @@ class UdsDataPlaneTest {
 
         // 规则测试必须要求链路：界面要靠它展示"哪条命中、哪条被跳过"
         assertThat(transport.methods).containsExactly("rules.stats", "rules.test").inOrder()
+    }
+
+    @Test
+    fun `连接列表按守护进程真实字段名映射而不是恒为空`() = runTest {
+        // 应答形状照抄 Go 侧 conn.Record 的冻结契约（internal/conn/record.go +
+        // cmd/syfused/proxies.go handleConnections 的 {"records":[...],"stats":...}）。
+        // startTime 的格式取自实跑守护进程抓到的真实字节：**带 +08:00 偏移与
+        // 7 位小数秒**，不是规范化的 UTC "Z" 形式 —— 解析必须吃得下它，
+        // 否则每条记录都会被丢弃，页面又变成"永远没有连接"。
+        val (plane, transport) = planeWith { method, id ->
+            if (method == "connections") {
+                okLine(
+                    id,
+                    json(
+                        """{"records":[
+                             {"id":7,"protocol":"tcp","srcAddr":"127.0.0.1:52341",
+                              "dstHost":"example.com","dstPort":443,
+                              "startTime":"2026-10-14T15:54:38.7587133+08:00",
+                              "labels":{"decision":"direct"},
+                              "endTime":"0001-01-01T00:00:00Z",
+                              "bytesIn":11,"bytesOut":22}
+                           ],"stats":{"totalConnections":1,"activeConnections":1}}""",
+                    ),
+                )
+            } else {
+                okLine(id, json("""{}"""))
+            }
+        }
+
+        val list = plane.connections()
+
+        assertThat(list).hasSize(1)
+        val conn = list.single()
+        assertThat(conn.id).isEqualTo("7")
+        assertThat(conn.network).isEqualTo("tcp")
+        assertThat(conn.dstHost).isEqualTo("example.com")
+        // 方向约定：BytesIn = 客户端→上游 = upBytes
+        assertThat(conn.upBytes).isEqualTo(11L)
+        assertThat(conn.downBytes).isEqualTo(22L)
+        // labels.decision 是路由决策，映射到 type（direct 模式下发 "direct"）
+        assertThat(conn.type).isEqualTo("direct")
+        // 零值 endTime 的含义是"仍活动"，不能显示成 0001 年的已关闭连接
+        assertThat(conn.state.name).isEqualTo("ACTIVE")
+        // 真实时间戳必须解析成毫秒，而不是回落到 -1（那会让界面显示 1970 年）
+        assertThat(conn.startAt).isGreaterThan(1_700_000_000_000L)
+        assertThat(transport.methods).containsExactly("connections")
+    }
+
+    @Test
+    fun `已关闭连接按 endTime 判定为 CLOSED`() = runTest {
+        val (plane, _) = planeWith { method, id ->
+            if (method == "connections") {
+                okLine(
+                    id,
+                    json(
+                        """{"records":[
+                             {"id":9,"protocol":"tcp","dstHost":"closed.test",
+                              "startTime":"2026-10-14T15:00:00+08:00",
+                              "labels":{"decision":"proxy"},
+                              "endTime":"2026-10-14T15:01:00+08:00",
+                              "closeReason":"upstream","bytesIn":1,"bytesOut":2}
+                           ],"stats":{"totalConnections":1,"closedConnections":1}}""",
+                    ),
+                )
+            } else {
+                okLine(id, json("""{}"""))
+            }
+        }
+
+        val conn = plane.connections().single()
+
+        assertThat(conn.state.name).isEqualTo("CLOSED")
+        assertThat(conn.type).isEqualTo("proxy")
+    }
+
+    @Test
+    fun `流量计数器读取真实累计字段而不是恒返回 null`() = runTest {
+        // handleTraffic 直接返回 conn.Stats（裸对象，没有 records 外壳）。
+        val (plane, _) = planeWith { method, id ->
+            if (method == "traffic") {
+                okLine(id, json("""{"totalConnections":3,"totalBytesIn":1024,"totalBytesOut":2048}"""))
+            } else {
+                okLine(id, json("""{}"""))
+            }
+        }
+
+        assertThat(plane.counters()).isEqualTo(1024L to 2048L)
+    }
+
+    @Test
+    fun `流量应答缺字段时回 null 而不是编造零值`() = runTest {
+        val (plane, _) = planeWith { _, id -> okLine(id, json("""{"totalConnections":3}""")) }
+
+        // 拿不到字节数就必须说"这轮没有数据"，否则速率曲线会画出假的零。
+        assertThat(plane.counters()).isNull()
     }
 
     @Test

@@ -1,18 +1,12 @@
-# Syfuse · 融合代理
+# Syfuse
 
-> **Shadowrocket 超集，Android 原生实现。** 一个 KernelSU / Magisk / APatch 模块，
-> 模块内内置 APK。模块提供系统级能力（透明代理 · DNS · MITM · 过滤 · 封禁 ·
-> 脚本 · Hook · 证书与 hosts 注入），App 提供全部界面与配置。
-> 两者各自可独立工作，合起来是一个**只能比 Shadowrocket 多、不能少**的客户端。
+
 
 [![CI](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/vip-svip/Syfuse/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-M0--M14%20%E5%AE%8C%E6%88%90%20%C2%B7%20%E5%BE%85%E7%9C%9F%E6%9C%BA%E9%AA%8C%E8%AF%81-yellow.svg)](#功能可用性报告)
 
-> **当前状态：M0–M14 全部里程碑完成（引擎/守护进程/模块侧），353 项 Go 测试与
-> Kotlin 契约测试全绿。** 剩余工作为 Android 真机接线验证——逐项状态见
-> [功能可用性报告](#功能可用性报告)，不夸大任何能力。
-> 跨轮进度真相见 [`PROGRESS.md`](PROGRESS.md)；门禁原始输出见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
+
 
 ## 特性一览
 
@@ -99,27 +93,8 @@
 `不可用` 项的入口禁用并写明里程碑。
 
 ---
-## 详细设计文档
-
-历史设计文档（架构 / 数据模型 / syfuse.conf 键表 / 规则语法全表 / API 与 CLI /
-性能预算 / 权限 / 风险清单 / FAQ）已随本仓库归档，见：
-
-- [`docs/EVIDENCE.md`](docs/EVIDENCE.md) —— 门禁原始输出与性能数据
-- [`docs/filter_gap.md`](docs/filter_gap.md) —— 过滤语法差距调研与路线
-- [`PROGRESS.md`](PROGRESS.md) —— 跨轮进度真相
-- [`PENDING-EXTERNAL.md`](PENDING-EXTERNAL.md) —— 待外部验证项
-- [`docs/` 目录](docs/) —— 其余设计文档
-
 
 ## 免责声明
 
 本项目仅供学习与技术研究。使用本模块产生的任何后果由使用者自行承担。
 请遵守所在地区法律法规。
-
-## 致谢与许可
-
-- [goja](https://github.com/dop251/goja)（MIT）—— ECMAScript 引擎
-- [regexp2](https://github.com/dlclark/regexp2)（MIT）—— uBO 兼容正则
-- [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome) / [uBlock Origin](https://github.com/gorhill/uBlock) —— 过滤语法设计参考
-- [SY](https://github.com/vip-svip/SY) / SY-Fusion —— 前身项目
-- 本项目采用 [GPL-3.0-or-later](LICENSE) 许可
